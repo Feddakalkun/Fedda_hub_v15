@@ -1,10 +1,11 @@
 @echo off
 setlocal EnableDelayedExpansion
-cd /d "%~dp0"
 title FEDDA Installer
 
-set "BASE_DIR=%~dp0"
-if "%BASE_DIR:~-1%"=="\" set "BASE_DIR=%BASE_DIR:~0,-1%"
+set "SCRIPT_DIR=%~dp0"
+if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+for %%I in ("%SCRIPT_DIR%\..") do set "BASE_DIR=%%~fI"
+cd /d "%BASE_DIR%"
 
 :: Skip menu if re-launched as admin with install type argument
 if "%1"=="FULL" goto :run_full
@@ -215,15 +216,16 @@ if %errorlevel% neq 0 (
 )
 
 :run_full
-cd /d "%~dp0"
-set "BASE_DIR=%~dp0"
-if "!BASE_DIR:~-1!"=="\" set "BASE_DIR=!BASE_DIR:~0,-1!"
+for %%I in ("%~dp0\..") do set "BASE_DIR=%%~fI"
+set "SCRIPT_DIR=%~dp0"
+if "!SCRIPT_DIR:~-1!"=="\" set "SCRIPT_DIR=!SCRIPT_DIR:~0,-1!"
+cd /d "!BASE_DIR!"
 
 echo.
 echo   Starting Full Install...
 echo.
 
-powershell -ExecutionPolicy Bypass -File "%BASE_DIR%\scripts\install.ps1"
+powershell -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\install.ps1"
 
 if %errorlevel% neq 0 (
     echo.
@@ -248,15 +250,16 @@ if "%LITE_AVAILABLE%"=="0" (
 )
 
 :run_lite
-cd /d "%~dp0"
-set "BASE_DIR=%~dp0"
-if "!BASE_DIR:~-1!"=="\" set "BASE_DIR=!BASE_DIR:~0,-1!"
+for %%I in ("%~dp0\..") do set "BASE_DIR=%%~fI"
+set "SCRIPT_DIR=%~dp0"
+if "!SCRIPT_DIR:~-1!"=="\" set "SCRIPT_DIR=!SCRIPT_DIR:~0,-1!"
+cd /d "!BASE_DIR!"
 
 echo.
 echo   Starting Lite Install...
 echo.
 
-powershell -ExecutionPolicy Bypass -File "%BASE_DIR%\scripts\install_lite.ps1"
+powershell -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\install_lite.ps1"
 
 if %errorlevel% neq 0 (
     echo.
@@ -291,3 +294,4 @@ if exist "%BASE_DIR%\logs\install_report.txt" (
     echo.
 )
 pause
+
