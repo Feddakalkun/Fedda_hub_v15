@@ -1,4 +1,4 @@
-﻿# FEDDA Hub v15
+# FEDDA Hub v15
 
 FEDDA Hub v15 is the slim distribution branch for a workflow-first local AI studio.
 
@@ -16,15 +16,13 @@ Agent Chat, Audio/SFX, old workflow playgrounds, logs UI, and experimental menu 
 
 ## Install layout
 
-For local staging this project is expected to live under:
+For local staging, put `FEDDA_v15_Installer.bat` in any folder you want to use as the install root. The installer creates:
 
 ```text
-H:\Fedda-Hub\Fedda_hub_v15\
-  install\
-    FEDDA_v15_Installer.bat
-    app\                 # local runtime install target, ignored by git
-  repo\
-    Fedda_hub_v15\       # git working tree for this repository
+<your chosen folder>\
+  FEDDA_v15_Installer.bat
+  app\                 # local runtime install target, ignored by git
+  logs\                # installer logs
 ```
 
 The single-file installer clones or updates:
@@ -54,7 +52,7 @@ The installer bootstraps those locally.
 From the repo folder:
 
 ```powershell
-cd H:\Fedda-Hub\Fedda_hub_v15\repo\Fedda_hub_v15
+cd <your repo folder>
 .\scripts\smoke_clean_install.ps1
 cd frontend
 npm.cmd run build

@@ -5,8 +5,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$destTurbo = 'H:\Final\060326\Fedda_ltx-UI-install\comfyuifeddafront-lite\frontend\public\lora-previews\zimage_turbo'
-$destNsfw = 'H:\Final\060326\Fedda_ltx-UI-install\comfyuifeddafront-lite\frontend\public\lora-previews\zimage_nsfw'
+$RootPath = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$destTurbo = Join-Path $RootPath "frontend\public\lora-previews\zimage_turbo"
+$destNsfw = Join-Path $RootPath "frontend\public\lora-previews\zimage_nsfw"
 New-Item -ItemType Directory -Force -Path $destTurbo | Out-Null
 New-Item -ItemType Directory -Force -Path $destNsfw | Out-Null
 

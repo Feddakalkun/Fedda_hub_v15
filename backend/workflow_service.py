@@ -9,8 +9,8 @@ from lora_service import _normalize_lora_path  # robust path normalization for L
 if sys.platform == "win32":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
+        sys.stdout.reconfigure(encoding="utf-8-sig")
+        sys.stderr.reconfigure(encoding="utf-8-sig")
     except Exception:
         pass
 
@@ -22,7 +22,7 @@ class WorkflowService:
     def load_mapping(self) -> Dict[str, Any]:
         if not os.path.exists(self.mapping_file):
             return {}
-        with open(self.mapping_file, "r") as f:
+        with open(self.mapping_file, "r", encoding="utf-8-sig") as f:
             return json.load(f)
 
     def load_runtime_settings(self) -> Dict[str, Any]:
@@ -30,7 +30,7 @@ class WorkflowService:
         if not os.path.exists(settings_path):
             return {}
         try:
-            with open(settings_path, "r", encoding="utf-8") as f:
+            with open(settings_path, "r", encoding="utf-8-sig") as f:
                 return json.load(f)
         except Exception:
             return {}
@@ -58,7 +58,7 @@ class WorkflowService:
 
     def convert_ui_to_api(self, data: dict) -> dict:
         """
-        Robust ComfyUI GUI → API format converter.
+        Robust ComfyUI GUI Ã¢â€ â€™ API format converter.
         Ported from dev_tools/convert_workflows.py
         """
         links = {}
@@ -116,7 +116,7 @@ class WorkflowService:
         if not path or not os.path.exists(path):
             return None
 
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8-sig") as f:
             workflow = json.load(f)
 
         is_api = self.is_api_format(workflow)
@@ -170,9 +170,9 @@ class WorkflowService:
                             for slot_key, slot_val in wf_node.get("inputs", {}).items():
                                 if slot_key.startswith("lora_") and slot_key != "lora_1" and isinstance(slot_val, dict):
                                     slot_val["on"] = False
-                        print(f"  [OK] NSFW disabled — all non-base LoRA slots turned off")
+                        print(f"  [OK] NSFW disabled Ã¢â‚¬â€ all non-base LoRA slots turned off")
                     else:
-                        print(f"  [OK] NSFW enabled — workflow LoRA slots unchanged")
+                        print(f"  [OK] NSFW enabled Ã¢â‚¬â€ workflow LoRA slots unchanged")
                     continue
 
                 if input_info.get("type") == "loras" and isinstance(param_value, list):
@@ -188,7 +188,7 @@ class WorkflowService:
                         ]
                         filtered = before - len(param_value)
                         if filtered > 0:
-                            print(f"  [FLUX2-Klein] Blocked {filtered} incompatible LoRA(s) — only flux2klein/ prefix allowed on this model")
+                            print(f"  [FLUX2-Klein] Blocked {filtered} incompatible LoRA(s) Ã¢â‚¬â€ only flux2klein/ prefix allowed on this model")
 
                     node_id = target_node_ids[0]
                     if node_id not in workflow:
@@ -234,7 +234,7 @@ class WorkflowService:
                                 print(f"  Final keys on node: {list(inputs.keys())}")
                                 print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
                         else:
-                            print(f"  [OK] No LoRAs sent — cleared lora slots on rgthree node {node_id}")
+                            print(f"  [OK] No LoRAs sent Ã¢â‚¬â€ cleared lora slots on rgthree node {node_id}")
                         continue
 
                     # Classic path: Dynamic LoRA chain for standard LoraLoader / LoraLoaderModelOnly
@@ -248,7 +248,7 @@ class WorkflowService:
                     active_loras = [l for l in param_value if l.get("name")]
 
                     if not active_loras:
-                        # No LoRAs — bypass: rewire all downstream refs to upstream sources
+                        # No LoRAs Ã¢â‚¬â€ bypass: rewire all downstream refs to upstream sources
                         for nid, node in workflow.items():
                             for key, val in list(node.get("inputs", {}).items()):
                                 if isinstance(val, list) and len(val) == 2 and str(val[0]) == node_id:
@@ -371,7 +371,7 @@ class WorkflowService:
             node["inputs"]["styles"] = "No Style"
             print("  [FLUX2-Klein] Sanitized Load Styles CSV -> 'No Style'")
 
-        # Fix Text Concatenate node 201 (was losing delimiter/clean_whitespace after UI→API conversion)
+        # Fix Text Concatenate node 201 (was losing delimiter/clean_whitespace after UIÃ¢â€ â€™API conversion)
         if "201" in workflow:
             node = workflow["201"]
             if "inputs" not in node:

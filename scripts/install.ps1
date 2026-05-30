@@ -105,140 +105,6 @@ function Pause-Step {
     }
 }
 
-function Install-MockingbirdRuntime {
-    param(
-        [string]$RootPath,
-        [string]$GitExe,
-        [string]$SpeakerSource
-    )
-
-    Write-Log "`n[Mockingbird] Installing dedicated XTTS runtime..."
-    $MockDir = Join-Path $RootPath "mockingbird_tts"
-    $PythonRoot = Join-Path $MockDir "python310"
-    $PythonExe = Join-Path $PythonRoot "python.exe"
-    $InstallerDir = Join-Path $MockDir "downloads"
-    $InstallerExe = Join-Path $InstallerDir "python-3.10.11-amd64.exe"
-    $VenvDir = Join-Path $MockDir "venv"
-    $VenvPy = Join-Path $VenvDir "Scripts\python.exe"
-    $RepoDir = Join-Path $MockDir "xtts-api-server"
-    $SpeakersDir = Join-Path $MockDir "speakers"
-    $OutputDir = Join-Path $MockDir "output"
-    $ModelsDir = Join-Path $MockDir "xtts_models"
-
-    New-Item -ItemType Directory -Path $MockDir, $SpeakersDir, $OutputDir, $ModelsDir, $InstallerDir -Force | Out-Null
-
-    if (-not (Test-Path $PythonExe)) {
-        Write-Log "[Mockingbird] Installing dedicated Python 3.10 runtime..."
-        Download-File "https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe" $InstallerExe
-        $PyInstallArgs = @(
-            "/quiet",
-            "InstallAllUsers=0",
-            "PrependPath=0",
-            "Include_launcher=0",
-            "Include_pip=1",
-            "Include_test=0",
-            "Include_dev=1",
-            "Include_debug=0",
-            "Include_symbols=0",
-            "TargetDir=`"$PythonRoot`""
-        )
-        $PyInstallerProc = Start-Process -FilePath $InstallerExe -ArgumentList $PyInstallArgs -NoNewWindow -Wait -PassThru
-        if ($PyInstallerProc.ExitCode -ne 0 -and $PyInstallerProc.ExitCode -ne 3010) {
-            throw "Mockingbird Python 3.10 installer returned exit code $($PyInstallerProc.ExitCode)"
-        }
-        $PythonReady = $false
-        for ($i = 0; $i -lt 20; $i++) {
-            if (Test-Path $PythonExe) {
-                $PythonReady = $true
-                break
-            }
-            Start-Sleep -Seconds 1
-        }
-        if (-not $PythonReady) {
-            Write-Log "[Mockingbird] Python installer completed but target python.exe not found. Falling back to portable NuGet Python..."
-            $NuPkg = Join-Path $InstallerDir "python.3.10.11.nupkg"
-            $NuZip = Join-Path $InstallerDir "python.3.10.11.zip"
-            $NuExtract = Join-Path $InstallerDir "python_nuget_extract"
-            Download-File "https://www.nuget.org/api/v2/package/python/3.10.11" $NuPkg
-            if (Test-Path $NuExtract) {
-                Remove-Item -LiteralPath $NuExtract -Recurse -Force -ErrorAction SilentlyContinue
-            }
-            Copy-Item -LiteralPath $NuPkg -Destination $NuZip -Force
-            Expand-Archive -Path $NuZip -DestinationPath $NuExtract -Force
-            $NuTools = Join-Path $NuExtract "tools"
-            if (-not (Test-Path $NuTools)) {
-                throw "NuGet Python package missing tools directory at $NuTools"
-            }
-            New-Item -ItemType Directory -Path $PythonRoot -Force | Out-Null
-            Copy-Item -Path (Join-Path $NuTools "*") -Destination $PythonRoot -Recurse -Force
-            if (-not (Test-Path $PythonExe)) {
-                throw "Mockingbird Python 3.10 install failed: python.exe not found at $PythonExe"
-            }
-        }
-        $EnsurePipProc = Start-Process -FilePath $PythonExe -ArgumentList "-m ensurepip --upgrade" -NoNewWindow -Wait -PassThru
-        if ($EnsurePipProc.ExitCode -ne 0) {
-            Write-Log "[Mockingbird] WARNING: ensurepip returned exit code $($EnsurePipProc.ExitCode); continuing."
-        }
-    }
-
-    $VenvCfg = Join-Path $VenvDir "pyvenv.cfg"
-    if (Test-Path $VenvCfg) {
-        $CfgContent = Get-Content -Path $VenvCfg -Raw -ErrorAction SilentlyContinue
-        if ($CfgContent -and $CfgContent -notmatch [regex]::Escape($PythonRoot)) {
-            Write-Log "[Mockingbird] Existing venv uses a different Python runtime; rebuilding..."
-            Remove-Item -LiteralPath $VenvDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-
-    if (-not (Test-Path $VenvPy)) {
-        Write-Log "[Mockingbird] Creating virtual environment..."
-        $VenvProc = Start-Process -FilePath $PythonExe -ArgumentList "-m venv `"$VenvDir`"" -NoNewWindow -Wait -PassThru
-        if ($VenvProc.ExitCode -ne 0 -or -not (Test-Path $VenvPy)) {
-            throw "Failed to create Mockingbird virtual environment"
-        }
-    } else {
-        Write-Log "[Mockingbird] Virtual environment already exists."
-    }
-
-    if (-not (Test-Path $RepoDir)) {
-        Write-Log "[Mockingbird] Cloning xtts-api-server..."
-        $CloneProc = Start-Process -FilePath $GitExe -ArgumentList @(
-            "clone",
-            "--depth", "1",
-            "https://github.com/daswer123/xtts-api-server.git",
-            "$RepoDir"
-        ) -NoNewWindow -Wait -PassThru
-        if ($CloneProc.ExitCode -ne 0 -or -not (Test-Path $RepoDir)) {
-            throw "Failed to clone xtts-api-server"
-        }
-    } else {
-        Write-Log "[Mockingbird] xtts-api-server already present."
-    }
-
-    Write-Log "[Mockingbird] Installing XTTS dependencies..."
-    $PipBootProc = Start-Process -FilePath $VenvPy -ArgumentList "-m pip install --upgrade pip wheel setuptools --no-warn-script-location" -NoNewWindow -Wait -PassThru
-    if ($PipBootProc.ExitCode -ne 0) {
-        throw "Mockingbird pip bootstrap failed"
-    }
-    $ReqProc = Start-Process -FilePath $VenvPy -ArgumentList "-m pip install -r `"$RepoDir\requirements.txt`" --no-warn-script-location" -NoNewWindow -Wait -PassThru
-    if ($ReqProc.ExitCode -ne 0) {
-        throw "Mockingbird requirements install failed"
-    }
-    $TorchProc = Start-Process -FilePath $VenvPy -ArgumentList "-m pip install torch==2.1.1+cu118 torchaudio==2.1.1+cu118 --index-url https://download.pytorch.org/whl/cu118 --no-warn-script-location" -NoNewWindow -Wait -PassThru
-    if ($TorchProc.ExitCode -ne 0) {
-        throw "Mockingbird torch install failed"
-    }
-
-    if (Test-Path $SpeakerSource) {
-        Copy-Item -Path $SpeakerSource -Destination (Join-Path $SpeakersDir "charlotte.wav") -Force
-        Write-Log "[Mockingbird] Default speaker installed."
-    } else {
-        Write-Log "[Mockingbird] WARNING: Speaker source missing at $SpeakerSource"
-    }
-
-    Write-Log "[Mockingbird] XTTS runtime ready."
-}
-
 function Download-ZImageTurboCelebPack {
     param(
         [string]$PythonExe,
@@ -951,20 +817,12 @@ $Deps = @(
     "deepdiff", "fal_client", "matplotlib", "scipy", "scikit-image", "scikit-learn",
     "timm", "colour-science", "blend-modes", "loguru",
     "fastapi", "uvicorn[standard]", "python-multipart",
-    "browser-cookie3", "edge-tts"
+    "browser-cookie3"
 )
 Run-Pip "install $($Deps -join ' ')"
-Install-MockingbirdRuntime -RootPath $RootPath -GitExe $GitExe -SpeakerSource (Join-Path $RootPath "assets\audio-tts\charlotte\charlotte.wav")
 
 # 7.3 (Removed) llama-cpp-python no longer needed - Ollama handles all LLM tasks
 
-# 7.4 Setup Audio Assets (if script exists)
-Write-Log "`n[Audio Setup] Configuring TTS assets..."
-$AudioScript = Join-Path $ScriptPath "setup_tts_audio.py"
-if (Test-Path $AudioScript) {
-    Start-Process -FilePath $PyExe -ArgumentList "$AudioScript" -NoNewWindow -Wait
-    Write-Log "Audio assets configured (ComfyUI + Mockingbird speaker)."
-}
 
 Pause-Step
 

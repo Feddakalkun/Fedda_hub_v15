@@ -5,8 +5,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$dest = 'H:\Final\060326\Fedda_ltx-UI-install\comfyuifeddafront-lite\frontend\public\lora-previews\zimage_turbo'
-$backupRoot = 'H:\Final\060326\Fedda_ltx-UI-install\comfyuifeddafront-lite\frontend\public\lora-previews\_backup'
+$RootPath = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$dest = Join-Path $RootPath "frontend\public\lora-previews\zimage_turbo"
+$backupRoot = Join-Path $RootPath "frontend\public\lora-previews\_backup"
 $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 $backup = Join-Path $backupRoot ("zimage_turbo_" + $stamp)
 

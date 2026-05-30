@@ -109,7 +109,7 @@ def main():
     print("The UI should now be able to generate with FLUX2-KLEIN")
     print("both with and without LoRAs from the flux2klein tab.")
     print()
-    print("Next manual step: run the full app from v7 and click through")
+    print("Next manual step: run the v15 app and click through")
     print("RichHome > Image Studio > Flux2-Klein Txt2Img and hit Generate.")
 
 
