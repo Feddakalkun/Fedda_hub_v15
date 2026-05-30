@@ -36,6 +36,25 @@ function Test-Command {
     return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Test-OllamaRunning {
+    $urls = @(
+        "http://127.0.0.1:11434/api/tags",
+        "http://localhost:11434/api/tags"
+    )
+
+    foreach ($url in $urls) {
+        try {
+            $resp = Invoke-WebRequest -Uri $url -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+            if ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 500) {
+                return $true
+            }
+        } catch {
+            # Try the next hostname. Some Windows setups bind only IPv4 or localhost.
+        }
+    }
+
+    return $false
+}
 function Install-EmbeddedOllama {
     param([string]$RootPath, [string]$LogFile)
     
@@ -225,27 +244,19 @@ if (Test-Command "npm") {
     $AllGood = $false
 }
 
-# Ollama
-# Ollama - check if installed AND running
-$OllamaInstalled = $false
-$OllamaRunning = $false
-if (Test-Command "ollama") {
-    $OllamaInstalled = $true
-    # Try to connect to Ollama service (port 11434)
-    try {
-        $null = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -TimeoutSec 1 -UseBasicParsing -ErrorAction SilentlyContinue
-        if ($?) {
-            $OllamaVersion = & ollama --version 2>&1
-            Write-Step "Ollama:  $OllamaVersion (running)" "Green"
-            $OllamaRunning = $true
-        } else {
-            Write-Step "Ollama:  Installed but NOT RUNNING" "Yellow"
-        }
-    } catch {
-        Write-Step "Ollama:  Installed but NOT RUNNING" "Yellow"
-    }
+# Ollama - check if installed and reachable on the local API port.
+$OllamaInstalled = Test-Command "ollama"
+$OllamaRunning = Test-OllamaRunning
+
+if ($OllamaInstalled -and $OllamaRunning) {
+    $OllamaVersion = & ollama --version 2>&1
+    Write-Step "Ollama:  $OllamaVersion (running)" "Green"
+} elseif ($OllamaInstalled) {
+    Write-Step "Ollama:  Installed but local API is not reachable on port 11434" "Yellow"
+} elseif ($OllamaRunning) {
+    Write-Step "Ollama:  Running on port 11434 (command not on PATH)" "Green"
 } else {
-    Write-Step "Ollama:  NOT INSTALLED (optional - Ollama Models page offline)" "Yellow"
+    Write-Step "Ollama:  NOT INSTALLED/RUNNING (optional - Ollama Models page offline)" "Yellow"
 }
 
 # NVIDIA GPU
