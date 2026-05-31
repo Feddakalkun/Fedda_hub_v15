@@ -46,6 +46,13 @@ class ModelDownloader:
                 "min_bytes": 5 * 1024 * 1024,
             },
         }
+        self.wan_core_specs: Dict[str, Dict[str, Any]] = {
+            "clip_vision_h.safetensors": {
+                "relative_dir": Path("clip_vision"),
+                "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors",
+                "min_bytes": 10 * 1024 * 1024,
+            },
+        }
 
     def get_progress(self, filename: str) -> dict:
         with self.lock:
@@ -128,6 +135,42 @@ class ModelDownloader:
 
         for filename in names:
             spec = self.zimage_core_specs.get(filename)
+            if not spec:
+                file_states.append({
+                    "filename": filename,
+                    "status": "unknown",
+                    "error": "No download spec found for this model",
+                })
+                continue
+
+            dest_path = self.comfy_models_dir / spec["relative_dir"] / filename
+            min_bytes = int(spec.get("min_bytes", 10240))
+            status = self._start_download_if_needed(filename, dest_path, str(spec["url"]), min_bytes)
+            progress = self.get_progress(filename)
+
+            file_states.append({
+                "filename": filename,
+                "status": status,
+                "progress": int(progress.get("progress", 0)),
+                "path": str(dest_path),
+                "exists": self._is_valid_file(dest_path, min_bytes=min_bytes),
+                "error": progress.get("error"),
+            })
+
+        ready = all(f["status"] == "completed" and f["exists"] for f in file_states if f["status"] != "unknown")
+        return {
+            "success": True,
+            "ready": ready,
+            "files": file_states,
+        }
+
+    def ensure_wan_core_models(self, required_filenames: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Ensure WAN models that Comfy validates before downloader nodes can run."""
+        names = required_filenames or list(self.wan_core_specs.keys())
+        file_states: List[Dict[str, Any]] = []
+
+        for filename in names:
+            spec = self.wan_core_specs.get(filename)
             if not spec:
                 file_states.append({
                     "filename": filename,

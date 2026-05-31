@@ -1733,6 +1733,13 @@ def _zimage_required_models(workflow_id: str, params: Dict[str, Any]) -> List[st
     return [n for n in names if n]
 
 
+def _wan_required_models(workflow_id: str, params: Dict[str, Any]) -> List[str]:
+    """Resolve WAN models that Comfy validates before in-graph downloader nodes can run."""
+    if workflow_id != "wan21-steady-dancer":
+        return []
+    return ["clip_vision_h.safetensors"]
+
+
 def _comfy_input_dir() -> Path:
     path = COMFY_DIR / "input"
     path.mkdir(parents=True, exist_ok=True)
@@ -2080,6 +2087,20 @@ async def generate(req: GenerateRequest):
                 raise HTTPException(
                     status_code=409,
                     detail=f"Auto-downloading required Z-Image model(s): {names}. Please retry when download completes.",
+                )
+
+        required_wan_models = _wan_required_models(req.workflow_id, req.params)
+        if required_wan_models:
+            preflight = model_downloader.ensure_wan_core_models(required_wan_models)
+            if not preflight.get("ready", False):
+                missing = [
+                    f for f in preflight.get("files", [])
+                    if f.get("status") != "completed" or not f.get("exists")
+                ]
+                names = ", ".join(str(f.get("filename")) for f in missing)
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Auto-downloading required WAN model(s): {names}. Please retry when download completes.",
                 )
 
         # 1. Prepare ComfyUI API payload

@@ -588,6 +588,12 @@ $NodeColor = "Green"
 if ($Failed -gt 0) { $NodeColor = "Yellow" }
 Write-Step "Nodes: $Installed installed, $Skipped already present, $Failed failed" $NodeColor
 
+$WanAnimatePatch = Join-Path $RootPath "scripts\patch_wan_animate_preprocess.ps1"
+if (Test-Path $WanAnimatePatch) {
+    Write-Step "Applying WanAnimate preprocess compatibility patch..."
+    & powershell -ExecutionPolicy Bypass -File "$WanAnimatePatch" -RootPath "$RootPath"
+}
+
 Write-Step "Skipping automatic Z-Image Turbo celeb pack download (available in UI on demand)." "Yellow"
 
 # ============================================================================

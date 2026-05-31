@@ -787,6 +787,12 @@ __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
     }
 }
 
+$WanAnimatePatch = Join-Path $RootPath "scripts\patch_wan_animate_preprocess.ps1"
+if (Test-Path $WanAnimatePatch) {
+    Write-Log "Applying WanAnimate preprocess compatibility patch..."
+    & powershell -ExecutionPolicy Bypass -File "$WanAnimatePatch" -RootPath "$RootPath"
+}
+
 Pause-Step
 
 # 7. Comprehensive Dependencies (Updated with fixes)
