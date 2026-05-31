@@ -310,6 +310,15 @@ class WorkflowService:
                             print(f"    [WARN] Node {node_id} NOT FOUND in workflow!")
                     continue
 
+                per_node_values = None
+                if (
+                    isinstance(param_value, list)
+                    and len(target_node_ids) > 1
+                    and len(param_value) == len(target_node_ids)
+                    and input_info.get("type") not in ("loras", "nsfw_toggle")
+                ):
+                    per_node_values = param_value
+
                 if is_api:
                     # API Format Injection
                     input_keys = input_info.get("input_keys")
@@ -317,12 +326,12 @@ class WorkflowService:
                         target_input_keys = [str(k) for k in input_keys if str(k).strip()]
                     else:
                         target_input_keys = [input_info.get("input_key") or param_key]
-                    for node_id in target_node_ids:
+                    for idx, node_id in enumerate(target_node_ids):
                         if node_id in workflow:
                             if "inputs" not in workflow[node_id]:
                                 workflow[node_id]["inputs"] = {}
                             for input_key in target_input_keys:
-                                workflow[node_id]["inputs"][input_key] = param_value
+                                workflow[node_id]["inputs"][input_key] = per_node_values[idx] if per_node_values is not None else param_value
                         else:
                             print(f"    [WARN] Node {node_id} NOT FOUND in workflow!")
                 else:

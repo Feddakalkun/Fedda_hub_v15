@@ -32,6 +32,13 @@ type WorkflowModelStatus = {
   files: WorkflowModelFile[];
 };
 
+type CameraShot = {
+  label: string;
+  h: number;
+  v: number;
+  z: number;
+};
+
 const H_PRESETS: Preset[] = [
   { id: 'front', label: 'front view', value: 0 },
   { id: 'left-30', label: 'left 30 deg', value: -30 },
@@ -104,6 +111,19 @@ function toWorkflowHorizontalAngle(angle: number): number {
   return normalized < 0 ? normalized + 360 : normalized;
 }
 
+function buildSixShotPlan(horizontalAngle: number, verticalAngle: number, zoom: number): CameraShot[] {
+  const centerV = clamp(verticalAngle, -VERTICAL_RANGE, VERTICAL_RANGE);
+  const centerZ = clamp(zoom, 1, 12);
+  return [
+    { label: 'Selected', h: horizontalAngle, v: centerV, z: centerZ },
+    { label: 'Left orbit', h: horizontalAngle - 45, v: centerV, z: centerZ },
+    { label: 'Right orbit', h: horizontalAngle + 45, v: centerV, z: centerZ },
+    { label: 'High angle', h: horizontalAngle, v: clamp(centerV + 28, -VERTICAL_RANGE, VERTICAL_RANGE), z: centerZ },
+    { label: 'Low angle', h: horizontalAngle, v: clamp(centerV - 28, -VERTICAL_RANGE, VERTICAL_RANGE), z: centerZ },
+    { label: 'Reverse', h: horizontalAngle + 180, v: centerV, z: Math.max(1, centerZ - 1.2) },
+  ];
+}
+
 function formatBytes(value?: number): string {
   const bytes = Number(value ?? 0);
   if (!Number.isFinite(bytes) || bytes <= 0) return '';
@@ -142,6 +162,10 @@ export const QwenMultiAnglesPage = () => {
   const [generationError, setGenerationError] = useState('');
   const [results, setResults] = useState<string[]>([]);
   const workflowId = generationMode === 'fast' ? 'qwen-multi-angles-fast' : 'qwen-multi-angles';
+  const shotPlan = useMemo(
+    () => buildSixShotPlan(horizontalAngle, verticalAngle, zoom),
+    [horizontalAngle, verticalAngle, zoom],
+  );
 
   useEffect(() => {
     setHPresetId(nearestPresetId(horizontalAngle, H_PRESETS, 5));
@@ -355,15 +379,18 @@ export const QwenMultiAnglesPage = () => {
     setResults([]);
     try {
       const chosenSeed = seed < 0 ? Math.floor(Math.random() * 2_147_483_000) : seed;
+      const isStandard = generationMode === 'standard';
       const payload = {
         workflow_id: workflowId,
         params: {
           image: uploadedImageName,
-          horizontal_angle: toWorkflowHorizontalAngle(horizontalAngle),
-          vertical_angle: verticalAngle,
-          zoom,
-          default_prompts: defaultPrompts,
-          camera_view: cameraView,
+          horizontal_angle: isStandard
+            ? shotPlan.map((shot) => toWorkflowHorizontalAngle(shot.h))
+            : toWorkflowHorizontalAngle(horizontalAngle),
+          vertical_angle: isStandard ? shotPlan.map((shot) => shot.v) : verticalAngle,
+          zoom: isStandard ? shotPlan.map((shot) => shot.z) : zoom,
+          default_prompts: isStandard ? shotPlan.map(() => defaultPrompts) : defaultPrompts,
+          camera_view: isStandard ? shotPlan.map(() => cameraView) : cameraView,
           seed: chosenSeed,
         },
       };
@@ -454,9 +481,27 @@ export const QwenMultiAnglesPage = () => {
               <option value="standard">Standard (6 outputs, slower)</option>
             </select>
             <p className="mt-2 text-[10px] text-slate-500">
-              Fast and Standard use the same Qwen model pack; Standard produces six angles.
+              Fast uses the selected camera. Standard renders a six-shot orbit from the selected camera.
             </p>
           </div>
+
+          {generationMode === 'standard' && (
+            <div className="rounded-xl border border-cyan-400/20 bg-cyan-500/5 p-3">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-200">
+                Six-Shot Plan
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {shotPlan.map((shot) => (
+                  <div key={shot.label} className="rounded border border-white/10 bg-black/25 px-2 py-1.5">
+                    <div className="text-[10px] text-slate-200">{shot.label}</div>
+                    <div className="mt-0.5 text-[9px] text-slate-500">
+                      H {normalizeDegrees(shot.h)} / V {shot.v} / Z {shot.z.toFixed(1)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div
             className={`rounded-xl border p-3 ${
@@ -744,7 +789,9 @@ export const QwenMultiAnglesPage = () => {
               ? 'Generating...'
               : modelStatus && !modelStatus.ready
                 ? 'Generate + Download Missing Models'
-                : 'Generate Multi Angle'}
+                : generationMode === 'standard'
+                  ? 'Generate 6 Angles'
+                  : 'Generate Angle'}
           </button>
         </section>
 
