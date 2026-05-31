@@ -264,6 +264,7 @@ export function Wan21SteadyDancerPage() {
   const dragging = useRef<'start' | 'end' | null>(null);
   const prevVideoCountRef = useRef(0);
   const sessionRef = useRef<string[]>([]);
+  const initialRecoverRef = useRef(false);
 
   const [sourceUrl, setSourceUrl] = useState('');
   const [subjectImageFile, setSubjectImageFile] = usePersistentState<string | null>('wan21sd_subject_image', null);
@@ -279,6 +280,7 @@ export function Wan21SteadyDancerPage() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isGeneratingPose, setIsGeneratingPose] = useState(false);
   const [isImportingPose, setIsImportingPose] = useState(false);
+  const [isRecoveringPose, setIsRecoveringPose] = useState(false);
 
   const [videoDuration, setVideoDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -548,6 +550,34 @@ export function Wan21SteadyDancerPage() {
     return imported;
   };
 
+  const recoverLatestPoseOutput = async (silent = false) => {
+    if (isRecoveringPose) return false;
+    setIsRecoveringPose(true);
+    try {
+      const res = await fetch(`${BACKEND_API.BASE_URL}/api/media/import-latest-output`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subfolder: 'IMAGE/Z-IMAGE' }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || 'No Z-Image output found');
+      setPoseImages([{ filename: data.filename, subfolder: '', type: 'input' }]);
+      if (!silent) toast(`Recovered ${data.source_filename || 'latest Z-Image output'}`, 'success');
+      return true;
+    } catch (err: any) {
+      if (!silent) toast(err.message || 'Could not recover latest Z-Image output', 'error');
+      return false;
+    } finally {
+      setIsRecoveringPose(false);
+    }
+  };
+
+  useEffect(() => {
+    if (initialRecoverRef.current || poseImages.length > 0 || isGeneratingPose) return;
+    initialRecoverRef.current = true;
+    recoverLatestPoseOutput(true);
+  }, [isGeneratingPose, poseImages.length]);
+
   const generatePoseImage = async () => {
     if (!capturedFrameFile || isGeneratingPose) return;
     setIsGeneratingPose(true);
@@ -583,7 +613,8 @@ export function Wan21SteadyDancerPage() {
       setPoseImages(imported);
       toast('Character pose image ready for review', 'success');
     } catch (err: any) {
-      toast(err.message || 'Z-Image generation failed', 'error');
+      const recovered = await recoverLatestPoseOutput(true);
+      toast(recovered ? 'Recovered latest Z-Image output for review' : (err.message || 'Z-Image generation failed'), recovered ? 'success' : 'error');
     } finally {
       setIsGeneratingPose(false);
     }
@@ -869,8 +900,12 @@ export function Wan21SteadyDancerPage() {
             </div>
             <div className="space-y-3">
               {poseImages.length === 0 ? (
-                <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-white/10 bg-black/30 px-6 text-center text-sm text-zinc-700">
-                  Generated pose candidates will appear here.
+                <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-xl border border-white/10 bg-black/30 px-6 text-center text-sm text-zinc-700">
+                  <span>Generated pose candidates will appear here.</span>
+                  <NeutralButton onClick={() => recoverLatestPoseOutput(false)} disabled={isRecoveringPose}>
+                    {isRecoveringPose ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                    Recover latest Z-Image output
+                  </NeutralButton>
                 </div>
               ) : (
                 poseImages.map((image, index) => (

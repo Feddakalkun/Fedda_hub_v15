@@ -1702,6 +1702,10 @@ class ImportComfyImageRequest(BaseModel):
     type: str = "output"
 
 
+class ImportLatestOutputRequest(BaseModel):
+    subfolder: str = "IMAGE/Z-IMAGE"
+
+
 def _zimage_required_models(workflow_id: str, params: Dict[str, Any]) -> List[str]:
     """
     Resolve which Z-Image core models must exist before prompt validation.
@@ -1882,6 +1886,34 @@ async def import_comfy_image(req: ImportComfyImageRequest):
     target = _comfy_input_dir() / _safe_unique_name("approved_pose", suffix)
     shutil.copy2(source, target)
     return {"success": True, "filename": target.name}
+
+
+@app.post("/api/media/import-latest-output")
+async def import_latest_output(req: ImportLatestOutputRequest):
+    """Copy the newest generated image from a ComfyUI output subfolder into input."""
+    subfolder = (req.subfolder or "").strip().replace("\\", "/").strip("/")
+    source_dir = _resolve_under(OUTPUT_DIR, subfolder) if subfolder else OUTPUT_DIR.resolve()
+    if not source_dir.exists() or not source_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"Output folder not found: {subfolder or 'output'}")
+
+    allowed_suffixes = {".png", ".jpg", ".jpeg", ".webp"}
+    candidates = [
+        p for p in source_dir.iterdir()
+        if p.is_file() and p.suffix.lower() in allowed_suffixes
+    ]
+    if not candidates:
+        raise HTTPException(status_code=404, detail=f"No image outputs found in {subfolder or 'output'}")
+
+    source = max(candidates, key=lambda p: p.stat().st_mtime)
+    suffix = source.suffix.lower().lstrip(".") or "png"
+    target = _comfy_input_dir() / _safe_unique_name("approved_pose", suffix)
+    shutil.copy2(source, target)
+    return {
+        "success": True,
+        "filename": target.name,
+        "source_filename": source.name,
+        "source_subfolder": subfolder,
+    }
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
