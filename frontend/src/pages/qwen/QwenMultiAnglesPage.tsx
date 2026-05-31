@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { DragEvent as ReactDragEvent } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { Camera, Expand, Loader2, Minus, Plus, RefreshCw, Upload } from 'lucide-react';
 import { BACKEND_API } from '../../config/api';
 import { useToast } from '../../components/ui/Toast';
@@ -79,7 +80,16 @@ function padShots(shots: CameraShot[]): CameraShot[] {
   return [...clean, ...DEFAULT_SHOTS.slice(clean.length)].slice(0, MAX_SHOTS);
 }
 
-function CameraOrbitPreview({ shot }: { shot: CameraShot }) {
+function CameraOrbitPreview({
+  shot,
+  previewId,
+  onChange,
+}: {
+  shot: CameraShot;
+  previewId: string;
+  onChange: (patch: Partial<CameraShot>) => void;
+}) {
+  const patternId = `qwen-grid-${previewId}`;
   const hRad = ((shot.h - 90) * Math.PI) / 180;
   const x = 150 + Math.cos(hRad) * 96;
   const y = 102 + Math.sin(hRad) * 34;
@@ -88,29 +98,126 @@ function CameraOrbitPreview({ shot }: { shot: CameraShot }) {
   const armX = x + Math.cos(hRad) * zoomArm;
   const armY = y + Math.sin(hRad) * zoomArm * 0.35;
 
+  const getSvgPoint = (svg: SVGSVGElement, clientX: number, clientY: number) => {
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: ((clientX - rect.left) / Math.max(1, rect.width)) * 300,
+      y: ((clientY - rect.top) / Math.max(1, rect.height)) * 170,
+    };
+  };
+
+  const updateAxis = (axis: 'x' | 'y' | 'z', svg: SVGSVGElement, clientX: number, clientY: number) => {
+    const point = getSvgPoint(svg, clientX, clientY);
+    if (axis === 'x') {
+      const dx = (point.x - 150) / 96;
+      const dy = (point.y - 102) / 34;
+      const angle = Math.round(normalizeDegrees((Math.atan2(dy, dx) * 180) / Math.PI + 90));
+      onChange({ h: angle });
+      return;
+    }
+    if (axis === 'y') {
+      const t = clamp((102 - point.y) / 76, 0, 1);
+      onChange({ v: Math.round(t * 120 - 60) });
+      return;
+    }
+    const distance = Math.hypot(point.x - x, (point.y - y) / 0.35);
+    const zoom = clamp(1 + ((distance - 26) / 42) * 11, 1, 12);
+    onChange({ z: Number(zoom.toFixed(1)) });
+  };
+
+  const startDrag = (axis: 'x' | 'y' | 'z', ev: ReactPointerEvent<SVGElement>) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const svg = ev.currentTarget.ownerSVGElement;
+    if (!svg) return;
+    updateAxis(axis, svg, ev.clientX, ev.clientY);
+    const onMove = (moveEv: PointerEvent) => updateAxis(axis, svg, moveEv.clientX, moveEv.clientY);
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
   return (
     <div className="relative mt-3 overflow-hidden rounded-lg border border-white/10 bg-black/45">
       <svg viewBox="0 0 300 170" className="h-36 w-full" role="img" aria-label="Camera angle preview">
         <defs>
-          <pattern id="qwen-grid" width="16" height="16" patternUnits="userSpaceOnUse">
+          <pattern id={patternId} width="16" height="16" patternUnits="userSpaceOnUse">
             <path d="M 16 0 L 0 0 0 16" fill="none" stroke="rgba(161,161,170,0.08)" strokeWidth="1" />
           </pattern>
         </defs>
-        <path d="M0 82 L150 20 L300 82 L150 168 Z" fill="url(#qwen-grid)" opacity="0.95" />
-        <ellipse cx="150" cy="102" rx="96" ry="34" fill="none" stroke="rgba(212,212,216,0.55)" strokeWidth="6" />
+        <path d="M0 82 L150 20 L300 82 L150 168 Z" fill={`url(#${patternId})`} opacity="0.95" />
+        <ellipse
+          cx="150"
+          cy="102"
+          rx="96"
+          ry="34"
+          fill="none"
+          stroke="rgba(236,72,153,0.7)"
+          strokeWidth="6"
+          className="cursor-grab"
+          onPointerDown={(ev) => startDrag('x', ev)}
+        />
         <ellipse cx="150" cy="102" rx="34" ry="15" fill="none" stroke="rgba(212,212,216,0.22)" strokeWidth="2" />
-        <path d="M76 102 C64 70 70 42 92 20" fill="none" stroke="rgba(212,212,216,0.5)" strokeWidth="6" strokeLinecap="round" />
-        <circle cx="76" cy={yArc} r="12" fill="rgb(212,212,216)" />
-        <line x1={x} y1={y} x2={armX} y2={armY} stroke="rgba(250,250,250,0.72)" strokeWidth="4" strokeLinecap="round" />
-        <circle cx={armX} cy={armY} r="8" fill="rgb(250,250,250)" />
-        <circle cx={x} cy={y} r="14" fill="rgb(161,161,170)" stroke="rgba(250,250,250,0.55)" strokeWidth="2" />
+        <path
+          d="M76 102 C64 70 70 42 92 20"
+          fill="none"
+          stroke="rgba(34,211,238,0.72)"
+          strokeWidth="6"
+          strokeLinecap="round"
+          className="cursor-grab"
+          onPointerDown={(ev) => startDrag('y', ev)}
+        />
+        <circle
+          cx="76"
+          cy={yArc}
+          r="12"
+          fill="rgb(34,211,238)"
+          stroke="rgba(250,250,250,0.65)"
+          strokeWidth="2"
+          className="cursor-grab"
+          onPointerDown={(ev) => startDrag('y', ev)}
+        />
+        <line
+          x1={x}
+          y1={y}
+          x2={armX}
+          y2={armY}
+          stroke="rgba(245,158,11,0.8)"
+          strokeWidth="4"
+          strokeLinecap="round"
+          className="cursor-grab"
+          onPointerDown={(ev) => startDrag('z', ev)}
+        />
+        <circle
+          cx={armX}
+          cy={armY}
+          r="8"
+          fill="rgb(245,158,11)"
+          stroke="rgba(250,250,250,0.7)"
+          strokeWidth="2"
+          className="cursor-grab"
+          onPointerDown={(ev) => startDrag('z', ev)}
+        />
+        <circle
+          cx={x}
+          cy={y}
+          r="14"
+          fill="rgb(236,72,153)"
+          stroke="rgba(250,250,250,0.7)"
+          strokeWidth="2"
+          className="cursor-grab"
+          onPointerDown={(ev) => startDrag('x', ev)}
+        />
         <polygon points="132,52 186,75 186,128 132,113" fill="rgba(113,113,122,0.58)" stroke="rgba(250,250,250,0.5)" strokeWidth="1.5" />
         <line x1="150" y1="95" x2="185" y2="88" stroke="rgba(250,250,250,0.72)" strokeWidth="3" strokeLinecap="round" />
       </svg>
       <div className="grid grid-cols-3 border-t border-white/10 bg-black/35 text-center text-[11px]">
-        <div className="px-2 py-1.5 text-zinc-400">X <span className="font-semibold text-zinc-100">{shot.h} deg</span></div>
-        <div className="px-2 py-1.5 text-zinc-400">Y <span className="font-semibold text-zinc-100">{shot.v} deg</span></div>
-        <div className="px-2 py-1.5 text-zinc-400">Zoom <span className="font-semibold text-zinc-100">{shot.z.toFixed(1)}</span></div>
+        <div className="px-2 py-1.5 text-pink-300">X <span className="font-semibold text-pink-100">{shot.h} deg</span></div>
+        <div className="px-2 py-1.5 text-cyan-300">Y <span className="font-semibold text-cyan-100">{shot.v} deg</span></div>
+        <div className="px-2 py-1.5 text-amber-300">Zoom <span className="font-semibold text-amber-100">{shot.z.toFixed(1)}</span></div>
       </div>
     </div>
   );
@@ -387,7 +494,7 @@ export const QwenMultiAnglesPage = () => {
                     )}
                   </div>
 
-                  <CameraOrbitPreview shot={shot} />
+                  <CameraOrbitPreview previewId={`${idx}`} shot={shot} onChange={(patch) => setShot(idx, patch)} />
 
                   <div className="grid grid-cols-3 gap-2">
                     <label className="text-[10px] text-zinc-500">
