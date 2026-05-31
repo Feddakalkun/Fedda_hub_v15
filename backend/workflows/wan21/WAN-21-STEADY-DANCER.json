@@ -627,9 +627,9 @@
   },
   "137": {
     "inputs": {
-      "Number": "24"
+      "value": 24
     },
-    "class_type": "Float",
+    "class_type": "PrimitiveFloat",
     "_meta": {
       "title": "Frame Rate"
     }
@@ -684,18 +684,18 @@
   },
   "143": {
     "inputs": {
-      "Number": "512"
+      "value": 512
     },
-    "class_type": "Int",
+    "class_type": "PrimitiveInt",
     "_meta": {
       "title": "WIDTH"
     }
   },
   "144": {
     "inputs": {
-      "Number": "512"
+      "value": 512
     },
-    "class_type": "Int",
+    "class_type": "PrimitiveInt",
     "_meta": {
       "title": "HEIGHT"
     }
@@ -717,9 +717,9 @@
   },
   "147": {
     "inputs": {
-      "Number": "5"
+      "value": 5
     },
-    "class_type": "Int",
+    "class_type": "PrimitiveInt",
     "_meta": {
       "title": "VIDEO LENGTH in seconds"
     }
