@@ -79,6 +79,43 @@ function padShots(shots: CameraShot[]): CameraShot[] {
   return [...clean, ...DEFAULT_SHOTS.slice(clean.length)].slice(0, MAX_SHOTS);
 }
 
+function CameraOrbitPreview({ shot }: { shot: CameraShot }) {
+  const hRad = ((shot.h - 90) * Math.PI) / 180;
+  const x = 150 + Math.cos(hRad) * 96;
+  const y = 102 + Math.sin(hRad) * 34;
+  const yArc = 102 - ((shot.v + 60) / 120) * 76;
+  const zoomArm = 26 + ((shot.z - 1) / 11) * 42;
+  const armX = x + Math.cos(hRad) * zoomArm;
+  const armY = y + Math.sin(hRad) * zoomArm * 0.35;
+
+  return (
+    <div className="relative mt-3 overflow-hidden rounded-lg border border-white/10 bg-black/45">
+      <svg viewBox="0 0 300 170" className="h-36 w-full" role="img" aria-label="Camera angle preview">
+        <defs>
+          <pattern id="qwen-grid" width="16" height="16" patternUnits="userSpaceOnUse">
+            <path d="M 16 0 L 0 0 0 16" fill="none" stroke="rgba(161,161,170,0.08)" strokeWidth="1" />
+          </pattern>
+        </defs>
+        <path d="M0 82 L150 20 L300 82 L150 168 Z" fill="url(#qwen-grid)" opacity="0.95" />
+        <ellipse cx="150" cy="102" rx="96" ry="34" fill="none" stroke="rgba(212,212,216,0.55)" strokeWidth="6" />
+        <ellipse cx="150" cy="102" rx="34" ry="15" fill="none" stroke="rgba(212,212,216,0.22)" strokeWidth="2" />
+        <path d="M76 102 C64 70 70 42 92 20" fill="none" stroke="rgba(212,212,216,0.5)" strokeWidth="6" strokeLinecap="round" />
+        <circle cx="76" cy={yArc} r="12" fill="rgb(212,212,216)" />
+        <line x1={x} y1={y} x2={armX} y2={armY} stroke="rgba(250,250,250,0.72)" strokeWidth="4" strokeLinecap="round" />
+        <circle cx={armX} cy={armY} r="8" fill="rgb(250,250,250)" />
+        <circle cx={x} cy={y} r="14" fill="rgb(161,161,170)" stroke="rgba(250,250,250,0.55)" strokeWidth="2" />
+        <polygon points="132,52 186,75 186,128 132,113" fill="rgba(113,113,122,0.58)" stroke="rgba(250,250,250,0.5)" strokeWidth="1.5" />
+        <line x1="150" y1="95" x2="185" y2="88" stroke="rgba(250,250,250,0.72)" strokeWidth="3" strokeLinecap="round" />
+      </svg>
+      <div className="grid grid-cols-3 border-t border-white/10 bg-black/35 text-center text-[11px]">
+        <div className="px-2 py-1.5 text-zinc-400">X <span className="font-semibold text-zinc-100">{shot.h} deg</span></div>
+        <div className="px-2 py-1.5 text-zinc-400">Y <span className="font-semibold text-zinc-100">{shot.v} deg</span></div>
+        <div className="px-2 py-1.5 text-zinc-400">Zoom <span className="font-semibold text-zinc-100">{shot.z.toFixed(1)}</span></div>
+      </div>
+    </div>
+  );
+}
+
 export const QwenMultiAnglesPage = () => {
   const { toast } = useToast();
   const [shots, setShots] = usePersistentState<CameraShot[]>('qwen_multiangle_shots_v2', DEFAULT_SHOTS.slice(0, 1));
@@ -349,6 +386,8 @@ export const QwenMultiAnglesPage = () => {
                       </button>
                     )}
                   </div>
+
+                  <CameraOrbitPreview shot={shot} />
 
                   <div className="grid grid-cols-3 gap-2">
                     <label className="text-[10px] text-zinc-500">
