@@ -386,6 +386,64 @@ export function Wan21SteadyDancerPage() {
     }
   }, [execError, execState, pendingPromptId, toast]);
 
+  useEffect(() => {
+    if (!pendingPromptId || !isGenerating) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 360; // ~30 minutes @ 5s
+
+    const poll = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      try {
+        const res = await fetch(`${BACKEND_API.BASE_URL}/api/generate/status/${encodeURIComponent(pendingPromptId)}`);
+        const data = await res.json();
+        if (!res.ok || !data.success) return;
+
+        if (data.status === 'completed') {
+          const videos = Array.isArray(data.videos) ? data.videos : [];
+          const urls = videos
+            .map((videoFile: any) => comfyService.getImageUrl(videoFile))
+            .filter((url: string) => !isVitPosePreviewUrl(url));
+
+          if (urls.length > 0) {
+            sessionRef.current = [...sessionRef.current, ...urls];
+            const likelyFinal = urls.find((url: string) => isLikelySteadyDancerUrl(url));
+            setCurrentVideo(likelyFinal || urls[urls.length - 1]);
+            setHistory((prev) => [...urls, ...prev].slice(0, 40));
+            setIsGenerating(false);
+            setPendingPromptId(null);
+            toast(`Steady Dancer done (${urls.length} output)`, 'success');
+            return;
+          }
+
+          // Completed but no final video surfaced.
+          setIsGenerating(false);
+          setPendingPromptId(null);
+          toast('Run completed, but no final video was detected in outputs.', 'error');
+          return;
+        }
+      } catch {
+        // Keep polling on transient errors.
+      }
+
+      if (!cancelled && attempts >= maxAttempts) {
+        setIsGenerating(false);
+        setPendingPromptId(null);
+        toast('Timed out waiting for Steady Dancer output.', 'error');
+      }
+    };
+
+    const timer = window.setInterval(poll, 5000);
+    void poll();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isGenerating, pendingPromptId, setHistory, toast]);
+
   const uploadToComfy = async (file: File) => {
     const form = new FormData();
     form.append('file', file);
