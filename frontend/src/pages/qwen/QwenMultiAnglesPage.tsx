@@ -228,6 +228,9 @@ export const QwenMultiAnglesPage = () => {
   const [shots, setShots] = usePersistentState<CameraShot[]>('qwen_multiangle_shots_v2', DEFAULT_SHOTS.slice(0, 1));
   const [history, setHistory] = usePersistentState<string[]>('qwen_multiangle_history', []);
   const [seed, setSeed] = usePersistentState('qwen_multiangle_seed', -1);
+  const [steps, setSteps] = usePersistentState('qwen_multiangle_steps', 4);
+  const [cfg, setCfg] = usePersistentState('qwen_multiangle_cfg', 1);
+  const [denoise, setDenoise] = usePersistentState('qwen_multiangle_denoise', 1);
   const [defaultPrompts, setDefaultPrompts] = usePersistentState('qwen_multiangle_default_prompts', false);
   const [cameraView, setCameraView] = usePersistentState('qwen_multiangle_camera_view', false);
   const [isUploading, setIsUploading] = useState(false);
@@ -357,6 +360,9 @@ export const QwenMultiAnglesPage = () => {
           default_prompts: isMultiShot ? shotPayload.map(() => defaultPrompts) : defaultPrompts,
           camera_view: isMultiShot ? shotPayload.map(() => cameraView) : cameraView,
           seed: chosenSeed,
+          steps,
+          cfg,
+          denoise,
           shot_count: expectedCount,
         },
       };
@@ -626,6 +632,64 @@ export const QwenMultiAnglesPage = () => {
                 className="mt-1 w-full rounded border border-white/10 bg-black px-2 py-2 text-zinc-200"
               />
             </label>
+          </div>
+
+          <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-300">Quality</div>
+                <p className="mt-1 text-[10px] text-zinc-600">Keep CFG near 1.0 for best angle consistency.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSteps(4);
+                  setCfg(1);
+                  setDenoise(1);
+                }}
+                className="rounded border border-white/10 bg-white/[0.04] px-2 py-1.5 text-[11px] text-zinc-300 hover:bg-white/[0.08]"
+              >
+                Reset
+              </button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="text-[11px] text-zinc-500">
+                Steps <span className="font-mono text-zinc-200">{steps}</span>
+                <input
+                  type="range"
+                  min={2}
+                  max={8}
+                  step={1}
+                  value={steps}
+                  onChange={(e) => setSteps(Number(e.target.value))}
+                  className="mt-2 w-full accent-zinc-300"
+                />
+              </label>
+              <label className="text-[11px] text-zinc-500">
+                CFG <span className="font-mono text-zinc-200">{cfg.toFixed(1)}</span>
+                <input
+                  type="range"
+                  min={0.8}
+                  max={1.6}
+                  step={0.1}
+                  value={cfg}
+                  onChange={(e) => setCfg(Number(e.target.value))}
+                  className="mt-2 w-full accent-zinc-300"
+                />
+              </label>
+              <label className="text-[11px] text-zinc-500">
+                Denoise <span className="font-mono text-zinc-200">{denoise.toFixed(2)}</span>
+                <input
+                  type="range"
+                  min={0.75}
+                  max={1}
+                  step={0.05}
+                  value={denoise}
+                  onChange={(e) => setDenoise(Number(e.target.value))}
+                  className="mt-2 w-full accent-zinc-300"
+                />
+              </label>
+            </div>
           </div>
 
           <button

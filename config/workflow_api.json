@@ -452,6 +452,45 @@
                                                           "input_key":  "seed",
                                                           "type":  "seed_sequence",
                                                           "label":  "Seed"
+                                                      },
+                                             "steps":  {
+                                                           "node_ids":  [
+                                                                            "197:108",
+                                                                            "213:271",
+                                                                            "221:280",
+                                                                            "229:289",
+                                                                            "237:298",
+                                                                            "245:307"
+                                                                        ],
+                                                           "input_key":  "steps",
+                                                           "type":  "number",
+                                                           "label":  "Steps"
+                                                       },
+                                             "cfg":  {
+                                                         "node_ids":  [
+                                                                          "197:108",
+                                                                          "213:271",
+                                                                          "221:280",
+                                                                          "229:289",
+                                                                          "237:298",
+                                                                          "245:307"
+                                                                      ],
+                                                         "input_key":  "cfg",
+                                                         "type":  "number",
+                                                         "label":  "CFG Scale"
+                                                     },
+                                             "denoise":  {
+                                                              "node_ids":  [
+                                                                               "197:108",
+                                                                               "213:271",
+                                                                               "221:280",
+                                                                               "229:289",
+                                                                               "237:298",
+                                                                               "245:307"
+                                                                           ],
+                                                              "input_key":  "denoise",
+                                                              "type":  "number",
+                                                              "label":  "Denoise"
                                                       }
                                          }
                           },
@@ -960,6 +999,24 @@
                                                                "input_key":  "seed",
                                                                "type":  "number",
                                                                "label":  "Seed"
+                                                           },
+                                                  "steps":  {
+                                                               "node_id":  "197:108",
+                                                               "input_key":  "steps",
+                                                               "type":  "number",
+                                                               "label":  "Steps"
+                                                           },
+                                                  "cfg":  {
+                                                            "node_id":  "197:108",
+                                                            "input_key":  "cfg",
+                                                            "type":  "number",
+                                                            "label":  "CFG Scale"
+                                                        },
+                                                  "denoise":  {
+                                                                 "node_id":  "197:108",
+                                                                 "input_key":  "denoise",
+                                                                 "type":  "number",
+                                                                 "label":  "Denoise"
                                                            }
                                               }
                                },
