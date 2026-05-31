@@ -320,7 +320,7 @@ export const QwenMultiAnglesPage = () => {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-300">Camera Angles</div>
-                <p className="mt-1 text-[10px] text-zinc-600">Add one card per angle. Three cards fit per row on desktop.</p>
+                <p className="mt-1 text-[10px] text-zinc-600">Add one card per angle. Adjust X, Y and Zoom manually on each card.</p>
               </div>
               <button
                 type="button"
@@ -352,7 +352,7 @@ export const QwenMultiAnglesPage = () => {
 
                   <div className="grid grid-cols-3 gap-2">
                     <label className="text-[10px] text-zinc-500">
-                      H
+                      X
                       <select
                         value={H_PRESETS.some((p) => p.value === shot.h) ? shot.h : 'custom'}
                         onChange={(e) => {
@@ -365,7 +365,7 @@ export const QwenMultiAnglesPage = () => {
                       </select>
                     </label>
                     <label className="text-[10px] text-zinc-500">
-                      V
+                      Y
                       <select
                         value={V_PRESETS.some((p) => p.value === shot.v) ? shot.v : 'custom'}
                         onChange={(e) => {
@@ -378,7 +378,7 @@ export const QwenMultiAnglesPage = () => {
                       </select>
                     </label>
                     <label className="text-[10px] text-zinc-500">
-                      Z
+                      Zoom
                       <select
                         value={Z_PRESETS.some((p) => p.value === shot.z) ? shot.z : 'custom'}
                         onChange={(e) => {
@@ -392,32 +392,68 @@ export const QwenMultiAnglesPage = () => {
                     </label>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <input
-                      type="number"
-                      value={shot.h}
-                      min={-180}
-                      max={180}
-                      onChange={(e) => setShot(idx, { h: Number(e.target.value) })}
-                      className="rounded border border-white/10 bg-black px-2 py-1.5 text-center text-[11px] text-zinc-300"
-                    />
-                    <input
-                      type="number"
-                      value={shot.v}
-                      min={-60}
-                      max={60}
-                      onChange={(e) => setShot(idx, { v: Number(e.target.value) })}
-                      className="rounded border border-white/10 bg-black px-2 py-1.5 text-center text-[11px] text-zinc-300"
-                    />
-                    <input
-                      type="number"
-                      value={shot.z}
-                      min={1}
-                      max={12}
-                      step={0.1}
-                      onChange={(e) => setShot(idx, { z: Number(e.target.value) })}
-                      className="rounded border border-white/10 bg-black px-2 py-1.5 text-center text-[11px] text-zinc-300"
-                    />
+                  <div className="mt-3 space-y-2.5">
+                    <label className="grid grid-cols-[38px_1fr_52px] items-center gap-2 text-[10px] text-zinc-500">
+                      <span>X</span>
+                      <input
+                        type="range"
+                        min={-180}
+                        max={180}
+                        step={1}
+                        value={shot.h}
+                        onChange={(e) => setShot(idx, { h: Number(e.target.value) })}
+                        className="h-1.5 w-full accent-zinc-300"
+                      />
+                      <input
+                        type="number"
+                        value={shot.h}
+                        min={-180}
+                        max={180}
+                        onChange={(e) => setShot(idx, { h: Number(e.target.value) })}
+                        className="rounded border border-white/10 bg-black px-1.5 py-1 text-center text-[10px] text-zinc-300"
+                      />
+                    </label>
+                    <label className="grid grid-cols-[38px_1fr_52px] items-center gap-2 text-[10px] text-zinc-500">
+                      <span>Y</span>
+                      <input
+                        type="range"
+                        min={-60}
+                        max={60}
+                        step={1}
+                        value={shot.v}
+                        onChange={(e) => setShot(idx, { v: Number(e.target.value) })}
+                        className="h-1.5 w-full accent-zinc-300"
+                      />
+                      <input
+                        type="number"
+                        value={shot.v}
+                        min={-60}
+                        max={60}
+                        onChange={(e) => setShot(idx, { v: Number(e.target.value) })}
+                        className="rounded border border-white/10 bg-black px-1.5 py-1 text-center text-[10px] text-zinc-300"
+                      />
+                    </label>
+                    <label className="grid grid-cols-[38px_1fr_52px] items-center gap-2 text-[10px] text-zinc-500">
+                      <span>Zoom</span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={12}
+                        step={0.1}
+                        value={shot.z}
+                        onChange={(e) => setShot(idx, { z: Number(e.target.value) })}
+                        className="h-1.5 w-full accent-zinc-300"
+                      />
+                      <input
+                        type="number"
+                        value={shot.z}
+                        min={1}
+                        max={12}
+                        step={0.1}
+                        onChange={(e) => setShot(idx, { z: Number(e.target.value) })}
+                        className="rounded border border-white/10 bg-black px-1.5 py-1 text-center text-[10px] text-zinc-300"
+                      />
+                    </label>
                   </div>
                 </div>
               ))}
