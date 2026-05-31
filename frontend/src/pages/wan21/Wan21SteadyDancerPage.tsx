@@ -1,196 +1,591 @@
-import { useEffect, useRef, useState } from 'react';
-import { Film, Loader2, RefreshCw, Upload, Video } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import {
+  Check,
+  Download,
+  ExternalLink,
+  Film,
+  Image as ImageIcon,
+  Loader2,
+  Play,
+  Scissors,
+  Upload,
+  Video,
+} from 'lucide-react';
 import { BACKEND_API } from '../../config/api';
 import { useToast } from '../../components/ui/Toast';
 import { useComfyExecution } from '../../contexts/ComfyExecutionContext';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { comfyService } from '../../services/comfyService';
-import { PromptAssistant } from '../../components/ui/PromptAssistant';
-import { LoraSelector } from '../../components/ui/LoraSelector';
-import { FeddaButton, FeddaSectionTitle } from '../../components/ui/FeddaPrimitives';
-import { VideoOutputPanel } from '../../components/layout/VideoOutputPanel';
 import { WorkflowShell } from '../../components/layout/WorkflowShell';
+import { triggerMediaDownload } from '../../utils/mediaStore';
 
-function UploadCard({
+type ComfyImage = { filename: string; subfolder?: string; type?: string };
+
+const CONTROL_MODES = [
+  { label: 'DWPose', value: 2 },
+  { label: 'Lotus Depth', value: 1 },
+  { label: 'Canny', value: 3 },
+  { label: 'Canny Edge', value: 4 },
+  { label: 'HED Soft Edge', value: 5 },
+];
+
+const STYLES = [
+  'No Style',
+  'Hyper Portrait Master',
+  'Natural Beauty Unfiltered',
+  'Kodak Portra Film',
+  'Soft Diffused Intimacy',
+  'Authentic Unposed Moment',
+];
+
+const inputBase = 'w-full rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-white/25 placeholder:text-zinc-600';
+const smallLabel = 'text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500';
+const panel = 'rounded-xl border border-white/10 bg-[#09090b] p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]';
+
+function comfyViewUrl(filename: string | null, type: 'input' | 'output' = 'input', subfolder = '') {
+  if (!filename) return null;
+  return `/comfy/view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${type}`;
+}
+
+function outputUrl(file: ComfyImage) {
+  return comfyService.getImageUrl(file);
+}
+
+function fmtTime(seconds: number) {
+  if (!Number.isFinite(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+function classNames(...items: Array<string | false | null | undefined>) {
+  return items.filter(Boolean).join(' ');
+}
+
+const Field = ({
   label,
-  accept,
-  previewUrl,
-  uploading,
-  onFile,
+  children,
+  className = '',
 }: {
   label: string;
+  children: ReactNode;
+  className?: string;
+}) => (
+  <div className={classNames('space-y-1.5', className)}>
+    <span className={smallLabel}>{label}</span>
+    {children}
+  </div>
+);
+
+const StageHeader = ({ step, title, detail }: { step: string; title: string; detail?: string }) => (
+  <div className="mb-3 flex items-start justify-between gap-3">
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">{step}</p>
+      <h2 className="text-sm font-semibold text-zinc-100">{title}</h2>
+      {detail ? <p className="mt-1 text-xs text-zinc-500">{detail}</p> : null}
+    </div>
+  </div>
+);
+
+const NeutralButton = ({
+  children,
+  onClick,
+  disabled,
+  type = 'button',
+  className = '',
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  type?: 'button' | 'submit';
+  className?: string;
+}) => (
+  <button
+    type={type}
+    onClick={onClick}
+    disabled={disabled}
+    className={classNames(
+      'inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40',
+      className,
+    )}
+  >
+    {children}
+  </button>
+);
+
+const UploadDrop = ({
+  accept,
+  label,
+  filename,
+  preview,
+  busy,
+  onFile,
+}: {
   accept: string;
-  previewUrl: string | null;
-  uploading: boolean;
+  label: string;
+  filename: string | null;
+  preview?: React.ReactNode;
+  busy: boolean;
   onFile: (file: File) => void;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-  const isVideo = accept.includes('video');
+}) => {
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
-    <div
-      onClick={() => ref.current?.click()}
-      onDrop={(e) => {
-        e.preventDefault();
-        const file = e.dataTransfer.files[0];
-        if (file) onFile(file);
-      }}
-      onDragOver={(e) => e.preventDefault()}
-      className="relative rounded-xl border border-dashed border-white/[0.08] bg-white/[0.02] hover:border-violet-500/30 transition-all cursor-pointer overflow-hidden min-h-[160px]"
-    >
-      {previewUrl ? (
-        <div className="h-full">
-          {isVideo ? (
-            <video src={previewUrl} className="w-full h-full object-cover min-h-[160px]" muted loop autoPlay playsInline />
-          ) : (
-            <img src={previewUrl} alt={label} className="w-full h-full object-cover min-h-[160px]" />
-          )}
-          <div className="absolute inset-0 bg-black/45 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
-            <span className="text-[10px] font-black uppercase tracking-widest text-white/75">Replace</span>
-          </div>
-        </div>
-      ) : (
-        <div className="h-full min-h-[160px] flex flex-col items-center justify-center gap-2">
-          {uploading ? <Loader2 className="w-6 h-6 animate-spin text-violet-400/70" /> : <Upload className="w-6 h-6 text-white/15" />}
-          <span className="text-[9px] font-black uppercase tracking-widest text-white/25">{uploading ? 'Uploading...' : label}</span>
-        </div>
-      )}
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="flex min-h-[92px] w-full items-center justify-center rounded-xl border border-dashed border-white/15 bg-black/30 px-4 py-4 text-center transition hover:border-white/30 hover:bg-white/[0.03]"
+      >
+        {busy ? (
+          <span className="inline-flex items-center gap-2 text-sm text-zinc-400">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Uploading
+          </span>
+        ) : preview ? (
+          preview
+        ) : (
+          <span className="inline-flex items-center gap-2 text-sm text-zinc-400">
+            <Upload className="h-4 w-4" />
+            {label}
+          </span>
+        )}
+      </button>
       <input
-        ref={ref}
+        ref={inputRef}
         type="file"
         accept={accept}
         className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
+        onChange={(event) => {
+          const file = event.target.files?.[0];
           if (file) onFile(file);
+          event.currentTarget.value = '';
         }}
       />
+      {filename ? <p className="truncate text-[11px] text-zinc-500">{filename}</p> : null}
     </div>
   );
-}
+};
 
-export const Wan21SteadyDancerPage = () => {
-  const [prompt, setPrompt] = usePersistentState(
-    'wan21_sd_prompt',
-    'full body dancing, smooth rhythm, stable body proportions, cinematic lighting, natural motion',
-  );
-  const [width, setWidth] = usePersistentState('wan21_sd_width', 512);
-  const [height, setHeight] = usePersistentState('wan21_sd_height', 512);
-  const [videoLength, setVideoLength] = usePersistentState('wan21_sd_length', 5);
-  const [fps, setFps] = usePersistentState('wan21_sd_fps', 24);
-  const [seed, setSeed] = usePersistentState('wan21_sd_seed', -1);
-  const [steps, setSteps] = usePersistentState('wan21_sd_steps', 4);
-  const [cfg, setCfg] = usePersistentState('wan21_sd_cfg', 1);
-  const [poseSpatial, setPoseSpatial] = usePersistentState('wan21_sd_pose_spatial', 1);
-  const [poseTemporal, setPoseTemporal] = usePersistentState('wan21_sd_pose_temporal', 1);
-  const [loraName, setLoraName] = usePersistentState('wan21_sd_lora_name', '');
-  const [loraStrength, setLoraStrength] = usePersistentState('wan21_sd_lora_strength', 1);
+const SteadyOutputPanel = ({
+  currentVideo,
+  history,
+  isGenerating,
+  onSelectVideo,
+}: {
+  currentVideo: string | null;
+  history: string[];
+  isGenerating: boolean;
+  onSelectVideo: (url: string) => void;
+}) => (
+  <aside className="flex h-full w-[430px] max-w-[40vw] shrink-0 flex-col border-l border-white/10 bg-[#050505]">
+    <div className="border-b border-white/10 px-4 py-3">
+      <h3 className="text-sm font-semibold text-zinc-100">Output</h3>
+      <p className="text-[11px] text-zinc-500">Preview, history and export</p>
+    </div>
+    <div className="border-b border-white/10 p-3">
+      {currentVideo ? (
+        <div className="space-y-2">
+          <div className="overflow-hidden rounded-xl border border-white/10 bg-black">
+            <video src={currentVideo} className="aspect-video w-full object-contain" controls playsInline />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <NeutralButton onClick={() => window.open(currentVideo, '_blank', 'noopener,noreferrer')}>
+              <ExternalLink className="h-3.5 w-3.5" />
+              Open
+            </NeutralButton>
+            <NeutralButton onClick={() => triggerMediaDownload(currentVideo, 'fedda-steady-dancer.mp4')}>
+              <Download className="h-3.5 w-3.5" />
+              Download
+            </NeutralButton>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-white/10 bg-black/40 p-6 text-center text-sm text-zinc-600">
+          {isGenerating ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Rendering motion transfer
+            </span>
+          ) : (
+            'No Steady Dancer output yet.'
+          )}
+        </div>
+      )}
+    </div>
+    <div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto p-3">
+      {history.length === 0 ? (
+        <div className="flex h-full items-center justify-center text-xs text-zinc-700">Waiting for first output</div>
+      ) : (
+        history.slice(0, 20).map((url, index) => (
+          <button
+            key={`${url}-${index}`}
+            type="button"
+            onClick={() => onSelectVideo(url)}
+            className="w-full rounded-lg border border-white/10 bg-black/35 p-2 text-left transition hover:bg-white/[0.05]"
+          >
+            <div className="flex items-center gap-2">
+              <Video className="h-3.5 w-3.5 text-zinc-500" />
+              <span className="truncate text-[11px] text-zinc-300">Output {history.length - index}</span>
+            </div>
+          </button>
+        ))
+      )}
+    </div>
+  </aside>
+);
 
-  const [subjectImageFile, setSubjectImageFile] = usePersistentState<string | null>('wan21_sd_subject_image', null);
-  const [motionVideoFile, setMotionVideoFile] = usePersistentState<string | null>('wan21_sd_motion_video', null);
-  const [uploadingSubject, setUploadingSubject] = useState(false);
-  const [uploadingMotion, setUploadingMotion] = useState(false);
+export function Wan21SteadyDancerPage() {
+  const { toast } = useToast();
+  const {
+    state: execState,
+    error: execError,
+    lastOutputVideos,
+    outputReadyCount,
+    registerNodeMap,
+  } = useComfyExecution();
 
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [pendingPromptId, setPendingPromptId] = useState<string | null>(null);
-  const [currentVideo, setCurrentVideo] = usePersistentState<string | null>('wan21_sd_current_video', null);
-  const [history, setHistory] = usePersistentState<string[]>('wan21_sd_history', []);
-  const [availableLoras, setAvailableLoras] = useState<string[]>([]);
-
-  const prevCountRef = useRef(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef<'start' | 'end' | null>(null);
+  const prevVideoCountRef = useRef(0);
   const sessionRef = useRef<string[]>([]);
 
-  const { toast } = useToast();
-  const { state: execState, error: execError, lastOutputVideos, outputReadyCount, registerNodeMap } = useComfyExecution();
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [subjectImageFile, setSubjectImageFile] = usePersistentState<string | null>('wan21sd_subject_image', null);
+  const [motionVideoFile, setMotionVideoFile] = usePersistentState<string | null>('wan21sd_motion_video', null);
+  const [trimmedMotionFile, setTrimmedMotionFile] = usePersistentState<string | null>('wan21sd_trimmed_motion_video', null);
+  const [capturedFrameFile, setCapturedFrameFile] = usePersistentState<string | null>('wan21sd_pose_frame', null);
+  const [approvedSubjectFile, setApprovedSubjectFile] = usePersistentState<string | null>('wan21sd_approved_subject', null);
 
-  const subjectPreview = subjectImageFile ? `/comfy/view?filename=${encodeURIComponent(subjectImageFile)}&type=input` : null;
-  const motionPreview = motionVideoFile ? `/comfy/view?filename=${encodeURIComponent(motionVideoFile)}&type=input` : null;
+  const [uploadingSubject, setUploadingSubject] = useState(false);
+  const [uploadingMotion, setUploadingMotion] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isTrimming, setIsTrimming] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [isGeneratingPose, setIsGeneratingPose] = useState(false);
+  const [isImportingPose, setIsImportingPose] = useState(false);
+
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [startTime, setStartTime] = useState(0);
+  const [endTime, setEndTime] = useState(0);
+
+  const [prompt, setPrompt] = usePersistentState('wan21sd_prompt', 'a cinematic dance video, natural movement, realistic lighting');
+  const [width, setWidth] = usePersistentState('wan21sd_width', 480);
+  const [height, setHeight] = usePersistentState('wan21sd_height', 832);
+  const [videoLength, setVideoLength] = usePersistentState('wan21sd_length', 4);
+  const [fps, setFps] = usePersistentState('wan21sd_fps', 16);
+  const [steps, setSteps] = usePersistentState('wan21sd_steps', 12);
+  const [cfg, setCfg] = usePersistentState('wan21sd_cfg', 5);
+  const [poseSpatial, setPoseSpatial] = usePersistentState('wan21sd_pose_spatial', 1);
+  const [poseTemporal, setPoseTemporal] = usePersistentState('wan21sd_pose_temporal', 1);
+  const [seed, setSeed] = usePersistentState('wan21sd_seed', -1);
+  const [loraName, setLoraName] = usePersistentState('wan21sd_lora', '');
+  const [loraStrength, setLoraStrength] = usePersistentState('wan21sd_lora_strength', 1);
+
+  const [posePrompt, setPosePrompt] = usePersistentState(
+    'wan21sd_pose_prompt',
+    'realistic full body photo of the character, same exact pose as the reference, natural anatomy, detailed face, cinematic studio lighting',
+  );
+  const [controlMode, setControlMode] = usePersistentState('wan21sd_control_mode', 2);
+  const [controlStyle, setControlStyle] = usePersistentState('wan21sd_control_style', 'No Style');
+  const [controlStrength, setControlStrength] = usePersistentState('wan21sd_control_strength', 0.7);
+  const [poseWidth, setPoseWidth] = usePersistentState('wan21sd_pose_width', 1500);
+  const [poseHeight, setPoseHeight] = usePersistentState('wan21sd_pose_height', 1500);
+  const [poseSteps, setPoseSteps] = usePersistentState('wan21sd_pose_steps', 9);
+  const [poseCfg, setPoseCfg] = usePersistentState('wan21sd_pose_cfg', 1);
+  const [poseDenoise, setPoseDenoise] = usePersistentState('wan21sd_pose_denoise', 1);
+  const [poseSeed, setPoseSeed] = usePersistentState('wan21sd_pose_seed', -1);
+  const [characterLora, setCharacterLora] = usePersistentState('wan21sd_character_lora', '');
+  const [characterLoraStrength, setCharacterLoraStrength] = usePersistentState('wan21sd_character_lora_strength', 1);
+
+  const [poseImages, setPoseImages] = useState<ComfyImage[]>([]);
+  const [currentVideo, setCurrentVideo] = useState<string | null>(null);
+  const [history, setHistory] = usePersistentState<string[]>('wan21sd_history', []);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [pendingPromptId, setPendingPromptId] = useState<string | null>(null);
+  const [availableLoras, setAvailableLoras] = useState<string[]>([]);
+
+  const sourceVideoUrl = comfyViewUrl(motionVideoFile, 'input');
+  const trimmedVideoUrl = comfyViewUrl(trimmedMotionFile, 'input');
+  const capturedFrameUrl = comfyViewUrl(capturedFrameFile, 'input');
+  const subjectPreviewUrl = comfyViewUrl(approvedSubjectFile || subjectImageFile, 'input');
+  const finalSubjectFile = approvedSubjectFile || subjectImageFile;
+  const finalMotionFile = trimmedMotionFile || motionVideoFile;
+  const clipLength = Math.max(0, endTime - startTime);
+
+  const wanLoras = useMemo(() => availableLoras.filter((name) => {
+    const n = name.replace(/\\/g, '/').toLowerCase();
+    return n.includes('wan') || n.includes('lightx2v') || n.includes('steady');
+  }), [availableLoras]);
+
+  const zImageLoras = useMemo(() => availableLoras.filter((name) => {
+    const n = name.replace(/\\/g, '/').toLowerCase();
+    return n.includes('z-image') || n.includes('zimage') || n.includes('antigravity') || n.includes('sara');
+  }), [availableLoras]);
 
   useEffect(() => {
-    comfyService
-      .getLoras()
-      .then((loras) => {
-        const filtered = loras.filter((l) => {
-          const n = l.replace(/\\/g, '/').toLowerCase();
-          return n.includes('wan') || n.includes('lightx2v');
-        });
-        setAvailableLoras(filtered);
-      })
-      .catch(() => {});
+    comfyService.getLoras().then(setAvailableLoras).catch(() => setAvailableLoras([]));
   }, []);
-
-  const uploadFile = async (
-    file: File,
-    setFilename: (name: string) => void,
-    setUploading: (value: boolean) => void,
-  ) => {
-    setUploading(true);
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const res = await fetch(`${BACKEND_API.BASE_URL}/api/upload`, { method: 'POST', body: form });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.detail || 'Upload failed');
-      setFilename(data.filename);
-    } catch (error: any) {
-      toast(error.message || 'Upload failed', 'error');
-    } finally {
-      setUploading(false);
-    }
-  };
 
   useEffect(() => {
     if (!isGenerating && !pendingPromptId) return;
     if (!lastOutputVideos?.length) return;
-    const newVids = lastOutputVideos.slice(prevCountRef.current);
-    if (!newVids.length) return;
-    prevCountRef.current = lastOutputVideos.length;
-    const urls = newVids.map(
-      (v) => `/comfy/view?filename=${encodeURIComponent(v.filename)}&subfolder=${encodeURIComponent(v.subfolder)}&type=${v.type}`,
-    );
+    const newVideos = lastOutputVideos.slice(prevVideoCountRef.current);
+    if (newVideos.length === 0) return;
+    prevVideoCountRef.current = lastOutputVideos.length;
+    const urls = newVideos.map((videoFile) => comfyService.getImageUrl(videoFile));
     sessionRef.current = [...sessionRef.current, ...urls];
-    setCurrentVideo(urls[0]);
-    setHistory((prev) => [...urls, ...prev.filter((u) => !urls.includes(u))].slice(0, 40));
-  }, [outputReadyCount, lastOutputVideos, isGenerating, pendingPromptId, setCurrentVideo, setHistory]);
+    setCurrentVideo(urls[urls.length - 1]);
+    setHistory((prev) => [...urls, ...prev].slice(0, 40));
+  }, [outputReadyCount, lastOutputVideos, isGenerating, pendingPromptId, setHistory]);
 
   useEffect(() => {
     if (!pendingPromptId) return;
-    if (execState === 'error') {
-      const msg = String(execError?.message || '').toLowerCase();
-      if (msg.includes('no bones found')) {
-        toast(
-          'No bones found: use a motion video with one clearly visible full body (head + arms + legs in frame), and avoid tiny/far-away subjects.',
-          'error',
-        );
-      } else if (execError?.message) {
-        toast(execError.message, 'error');
-      } else {
-        toast('SteadyDancer failed during pose detection.', 'error');
-      }
+    if (execState === 'done') {
       setIsGenerating(false);
       setPendingPromptId(null);
-      return;
+      toast(`Steady Dancer done (${sessionRef.current.length || 1} output)`, 'success');
     }
-    if (execState !== 'done') return;
-    setIsGenerating(false);
-    setPendingPromptId(null);
-    toast('SteadyDancer video ready', 'success');
-  }, [execState, pendingPromptId, toast]);
+    if (execState === 'error') {
+      setIsGenerating(false);
+      setPendingPromptId(null);
+      const message = typeof execError === 'string' ? execError : execError?.message || 'Steady Dancer failed';
+      toast(message, 'error');
+    }
+  }, [execError, execState, pendingPromptId, toast]);
 
-  const handleGenerate = async () => {
-    if (!subjectImageFile || !motionVideoFile || !prompt.trim() || isGenerating) return;
-    if (height <= width) {
-      toast('Tip: portrait output (e.g. 512x864) usually improves body pose tracking.', 'info');
+  const uploadToComfy = async (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${BACKEND_API.BASE_URL}/api/upload`, { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.detail || 'Upload failed');
+    return String(data.filename);
+  };
+
+  const uploadSubject = async (file: File) => {
+    setUploadingSubject(true);
+    try {
+      const filename = await uploadToComfy(file);
+      setSubjectImageFile(filename);
+      setApprovedSubjectFile(null);
+      toast('Subject image uploaded', 'success');
+    } catch (err: any) {
+      toast(err.message || 'Subject upload failed', 'error');
+    } finally {
+      setUploadingSubject(false);
     }
+  };
+
+  const uploadMotion = async (file: File) => {
+    setUploadingMotion(true);
+    try {
+      const filename = await uploadToComfy(file);
+      setMotionVideoFile(filename);
+      setTrimmedMotionFile(null);
+      setCapturedFrameFile(null);
+      toast('Motion video uploaded', 'success');
+    } catch (err: any) {
+      toast(err.message || 'Motion upload failed', 'error');
+    } finally {
+      setUploadingMotion(false);
+    }
+  };
+
+  const downloadMotion = async () => {
+    if (!sourceUrl.trim()) return;
+    setIsDownloading(true);
+    try {
+      const res = await fetch(`${BACKEND_API.BASE_URL}/api/media/download-video`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: sourceUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || 'Download failed');
+      setMotionVideoFile(data.filename);
+      setTrimmedMotionFile(null);
+      setCapturedFrameFile(null);
+      if (data.duration) {
+        setVideoDuration(Number(data.duration));
+        setStartTime(0);
+        setEndTime(Math.min(Number(data.duration), 8));
+      }
+      toast(data.title ? `Downloaded: ${data.title}` : 'Video downloaded', 'success');
+    } catch (err: any) {
+      toast(err.message || 'Download failed', 'error');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const onVideoLoaded = () => {
+    const duration = videoRef.current?.duration || 0;
+    setVideoDuration(duration);
+    setCurrentTime(0);
+    setStartTime(0);
+    setEndTime(Math.min(duration, 8));
+  };
+
+  const getSeconds = useCallback((event: MouseEvent | React.MouseEvent) => {
+    const track = trackRef.current;
+    if (!track || videoDuration <= 0) return 0;
+    const rect = track.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * videoDuration;
+  }, [videoDuration]);
+
+  useEffect(() => {
+    const onMove = (event: MouseEvent) => {
+      if (!dragging.current) return;
+      const seconds = getSeconds(event);
+      if (dragging.current === 'start') {
+        const value = Math.min(seconds, Math.max(0, endTime - 0.25));
+        setStartTime(value);
+        if (videoRef.current) videoRef.current.currentTime = value;
+      } else {
+        const value = Math.max(seconds, startTime + 0.25);
+        setEndTime(value);
+        if (videoRef.current) videoRef.current.currentTime = value;
+      }
+    };
+    const onUp = () => {
+      dragging.current = null;
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [endTime, getSeconds, startTime]);
+
+  const trimMotion = async () => {
+    if (!motionVideoFile || endTime <= startTime) return;
+    setIsTrimming(true);
+    try {
+      const res = await fetch(`${BACKEND_API.BASE_URL}/api/media/trim-video`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: motionVideoFile, start_sec: startTime, end_sec: endTime }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || 'Trim failed');
+      setTrimmedMotionFile(data.filename);
+      setVideoLength(Math.max(1, Math.round(Number(data.duration || clipLength) * 10) / 10));
+      toast('Trimmed clip ready', 'success');
+    } catch (err: any) {
+      toast(err.message || 'Trim failed', 'error');
+    } finally {
+      setIsTrimming(false);
+    }
+  };
+
+  const captureFrame = async () => {
+    if (!motionVideoFile) return;
+    setIsCapturing(true);
+    try {
+      const res = await fetch(`${BACKEND_API.BASE_URL}/api/media/capture-frame`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: motionVideoFile, time_sec: startTime }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || 'Capture failed');
+      setCapturedFrameFile(data.filename);
+      toast('Pose frame captured', 'success');
+    } catch (err: any) {
+      toast(err.message || 'Capture failed', 'error');
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+  const pollPoseImages = async (promptId: string) => {
+    for (let i = 0; i < 180; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const res = await fetch(`${BACKEND_API.BASE_URL}/api/generate/status/${encodeURIComponent(promptId)}`);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Status failed');
+      if (data.status === 'completed') {
+        const images = Array.isArray(data.images) ? data.images as ComfyImage[] : [];
+        if (images.length === 0) throw new Error('Z-Image finished without image output');
+        return images;
+      }
+      if (data.status === 'not_found' && i > 8) throw new Error('Prompt disappeared from Comfy history');
+    }
+    throw new Error('Timed out waiting for Z-Image output');
+  };
+
+  const generatePoseImage = async () => {
+    if (!capturedFrameFile || isGeneratingPose) return;
+    setIsGeneratingPose(true);
+    setPoseImages([]);
+    try {
+      const loras = characterLora ? [{ name: characterLora, strength: characterLoraStrength }] : [];
+      const res = await fetch(`${BACKEND_API.BASE_URL}${BACKEND_API.ENDPOINTS.GENERATE}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workflow_id: 'z-image-controlnet-pose',
+          params: {
+            image: capturedFrameFile,
+            prompt: posePrompt.trim(),
+            style: controlStyle,
+            control_mode: controlMode,
+            control_strength: controlStrength,
+            width: poseWidth,
+            height: poseHeight,
+            seed: poseSeed === -1 ? Math.floor(Math.random() * 10_000_000_000) : poseSeed,
+            steps: poseSteps,
+            cfg: poseCfg,
+            denoise: poseDenoise,
+            loras,
+            client_id: comfyService.clientId,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || 'Z-Image generation failed');
+      const images = await pollPoseImages(String(data.prompt_id));
+      setPoseImages(images);
+      toast('Character pose image ready for review', 'success');
+    } catch (err: any) {
+      toast(err.message || 'Z-Image generation failed', 'error');
+    } finally {
+      setIsGeneratingPose(false);
+    }
+  };
+
+  const approvePoseImage = async (image: ComfyImage) => {
+    setIsImportingPose(true);
+    try {
+      const res = await fetch(`${BACKEND_API.BASE_URL}/api/media/import-image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(image),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || 'Could not approve generated image');
+      setApprovedSubjectFile(data.filename);
+      setSubjectImageFile(data.filename);
+      toast('Generated image is now the Steady Dancer subject', 'success');
+    } catch (err: any) {
+      toast(err.message || 'Could not approve generated image', 'error');
+    } finally {
+      setIsImportingPose(false);
+    }
+  };
+
+  const runSteadyDancer = async () => {
+    if (!finalSubjectFile || !finalMotionFile || !prompt.trim() || isGenerating) return;
     sessionRef.current = [];
-    prevCountRef.current = lastOutputVideos?.length ?? 0;
-    setCurrentVideo(null);
+    prevVideoCountRef.current = lastOutputVideos?.length ?? 0;
     setIsGenerating(true);
-
     fetch(`${BACKEND_API.BASE_URL}/api/workflow/node-map/wan21-steady-dancer`)
       .then((r) => r.json())
-      .then((d) => {
-        if (d.success) registerNodeMap(d.node_map);
-      })
+      .then((data) => { if (data.success) registerNodeMap(data.node_map); })
       .catch(() => {});
 
     try {
@@ -200,8 +595,8 @@ export const Wan21SteadyDancerPage = () => {
         body: JSON.stringify({
           workflow_id: 'wan21-steady-dancer',
           params: {
-            image: subjectImageFile,
-            reference_video: motionVideoFile,
+            image: finalSubjectFile,
+            reference_video: finalMotionFile,
             prompt: prompt.trim(),
             width,
             height,
@@ -213,138 +608,316 @@ export const Wan21SteadyDancerPage = () => {
             pose_strength_temporal: poseTemporal,
             seed: seed === -1 ? Math.floor(Math.random() * 10_000_000_000) : seed,
             ...(loraName ? { lora_name: loraName, lora_strength: loraStrength } : {}),
-            client_id: (comfyService as any).clientId,
+            client_id: comfyService.clientId,
           },
         }),
       });
       const data = await res.json();
-      if (data.success) setPendingPromptId(data.prompt_id);
-      else throw new Error(data.detail || 'Failed');
-    } catch (error: any) {
-      toast(error.message || 'Failed to start generation', 'error');
+      if (!res.ok || !data.success) throw new Error(data.detail || 'Steady Dancer failed');
+      setPendingPromptId(String(data.prompt_id));
+    } catch (err: any) {
       setIsGenerating(false);
+      toast(err.message || 'Steady Dancer failed', 'error');
     }
   };
 
-  const canGenerate = !!subjectImageFile && !!motionVideoFile && !!prompt.trim() && !isGenerating;
+  const startPct = videoDuration > 0 ? (startTime / videoDuration) * 100 : 0;
+  const endPct = videoDuration > 0 ? (endTime / videoDuration) * 100 : 100;
+  const currentPct = videoDuration > 0 ? (currentTime / videoDuration) * 100 : 0;
+  const canRun = !!finalSubjectFile && !!finalMotionFile && !!prompt.trim() && !isGenerating;
 
   return (
     <WorkflowShell
       title="WAN 2.1 Steady Dancer"
-      eyebrow="WAN Motion Transfer"
-      description="Transfer reference dance motion onto a subject image."
+      eyebrow="Advanced motion transfer"
+      description="Build the clip in stages, approve the generated start image, then run the final dance transfer."
       icon={Film}
       isGenerating={isGenerating}
-      canGenerate={canGenerate}
+      canGenerate={canRun}
+      leftClassName="bg-[#050505]"
+      outputClassName="bg-[#050505]"
       output={(
-        <VideoOutputPanel
-          title="WAN 2.1 SteadyDancer Output"
-          currentVideo={currentVideo}
+        <SteadyOutputPanel
+          currentVideo={currentVideo || history[0] || null}
           history={history}
           isGenerating={isGenerating}
+          onSelectVideo={setCurrentVideo}
         />
       )}
     >
-      <div className="space-y-5">
-
-          <div className="space-y-2">
-            <FeddaSectionTitle className="text-white/20">Inputs</FeddaSectionTitle>
-            <div className="rounded-xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100/90">
-              Best result: reference video should contain one full body dancer in frame. If pose fails (`no bones found`), try a closer/clearer motion clip or portrait framing.
-            </div>
-            <div className="grid gap-3 lg:grid-cols-2">
-              <UploadCard
-                label="Subject Image"
-                accept="image/*"
-                previewUrl={subjectPreview}
-                uploading={uploadingSubject}
-                onFile={(file) => uploadFile(file, (name) => setSubjectImageFile(name), setUploadingSubject)}
-              />
-              <UploadCard
-                label="Reference Motion Video"
+      <div className="mx-auto max-w-6xl space-y-4 px-4 pb-8">
+        <section className={panel}>
+          <StageHeader
+            step="Stage 1"
+            title="Motion Source"
+            detail="Download a public clip or upload one directly, then select the usable section."
+          />
+          <div className="grid gap-4 xl:grid-cols-[1.1fr_1.2fr]">
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input
+                  value={sourceUrl}
+                  onChange={(event) => setSourceUrl(event.target.value)}
+                  placeholder="TikTok, Instagram Reel, YouTube Shorts or direct video URL"
+                  className={inputBase}
+                />
+                <NeutralButton onClick={downloadMotion} disabled={!sourceUrl.trim() || isDownloading}>
+                  {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  Download
+                </NeutralButton>
+              </div>
+              <UploadDrop
                 accept="video/*"
-                previewUrl={motionPreview}
-                uploading={uploadingMotion}
-                onFile={(file) => uploadFile(file, (name) => setMotionVideoFile(name), setUploadingMotion)}
+                label="Upload motion video"
+                filename={motionVideoFile}
+                busy={uploadingMotion}
+                onFile={uploadMotion}
               />
+              <div className="grid grid-cols-2 gap-2">
+                <NeutralButton onClick={trimMotion} disabled={!motionVideoFile || isTrimming || endTime <= startTime}>
+                  {isTrimming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Scissors className="h-3.5 w-3.5" />}
+                  Trim Clip
+                </NeutralButton>
+                <NeutralButton onClick={captureFrame} disabled={!motionVideoFile || isCapturing}>
+                  {isCapturing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                  Capture Start
+                </NeutralButton>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="overflow-hidden rounded-xl border border-white/10 bg-black">
+                {sourceVideoUrl ? (
+                  <video
+                    ref={videoRef}
+                    src={sourceVideoUrl}
+                    className="aspect-video w-full object-contain"
+                    controls
+                    playsInline
+                    onLoadedMetadata={onVideoLoaded}
+                    onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+                  />
+                ) : (
+                  <div className="flex aspect-video items-center justify-center text-sm text-zinc-700">No motion source loaded</div>
+                )}
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                <div
+                  ref={trackRef}
+                  className="relative h-8 cursor-pointer rounded-full bg-white/[0.06]"
+                  onMouseDown={(event) => {
+                    const seconds = getSeconds(event);
+                    if (Math.abs(seconds - startTime) < Math.abs(seconds - endTime)) dragging.current = 'start';
+                    else dragging.current = 'end';
+                  }}
+                >
+                  <div className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-white/15" style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }} />
+                  <div className="absolute top-0 h-8 w-px bg-white/60" style={{ left: `${currentPct}%` }} />
+                  <button type="button" onMouseDown={() => { dragging.current = 'start'; }} className="absolute top-1/2 h-6 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-200" style={{ left: `${startPct}%` }} />
+                  <button type="button" onMouseDown={() => { dragging.current = 'end'; }} className="absolute top-1/2 h-6 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-200" style={{ left: `${endPct}%` }} />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-500">
+                  <span>Start {fmtTime(startTime)}</span>
+                  <span>Clip {clipLength.toFixed(1)}s</span>
+                  <span>End {fmtTime(endTime)}</span>
+                </div>
+              </div>
+              {trimmedMotionFile ? <p className="text-[11px] text-zinc-500">Trimmed reference ready: {trimmedMotionFile}</p> : null}
             </div>
           </div>
+        </section>
 
-          <PromptAssistant
-            context="wan-scene"
-            value={prompt}
-            onChange={setPrompt}
-            placeholder="Describe outfit/style and mood while preserving motion transfer..."
-            minRows={4}
-            accent="violet"
-            label="Prompt"
-            enableCaption={false}
+        <section className={panel}>
+          <StageHeader
+            step="Stage 2"
+            title="Pose Frame"
+            detail="This captured start pose drives the Z-Image ControlNet pass."
           />
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <label className="text-[10px] text-white/35">Width
-              <input type="number" value={width} onChange={(e) => setWidth(Number(e.target.value) || 512)} className="mt-1 w-full bg-white/[0.02] border border-white/[0.06] rounded-lg px-2 py-2 text-[11px] font-mono" />
-            </label>
-            <label className="text-[10px] text-white/35">Height
-              <input type="number" value={height} onChange={(e) => setHeight(Number(e.target.value) || 512)} className="mt-1 w-full bg-white/[0.02] border border-white/[0.06] rounded-lg px-2 py-2 text-[11px] font-mono" />
-            </label>
-            <label className="text-[10px] text-white/35">Length (sec)
-              <input type="number" value={videoLength} min={2} max={20} onChange={(e) => setVideoLength(Number(e.target.value) || 5)} className="mt-1 w-full bg-white/[0.02] border border-white/[0.06] rounded-lg px-2 py-2 text-[11px] font-mono" />
-            </label>
-            <label className="text-[10px] text-white/35">FPS
-              <input type="number" value={fps} min={12} max={60} onChange={(e) => setFps(Number(e.target.value) || 24)} className="mt-1 w-full bg-white/[0.02] border border-white/[0.06] rounded-lg px-2 py-2 text-[11px] font-mono" />
-            </label>
+          <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+            <div className="overflow-hidden rounded-xl border border-white/10 bg-black">
+              {capturedFrameUrl ? (
+                <img src={capturedFrameUrl} alt="Captured pose frame" className="aspect-[3/4] w-full object-contain" />
+              ) : (
+                <div className="flex aspect-[3/4] items-center justify-center px-6 text-center text-sm text-zinc-700">Capture a frame from the motion clip</div>
+              )}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field label="Final subject image" className="sm:col-span-1">
+                <UploadDrop
+                  accept="image/*"
+                  label="Direct subject upload"
+                  filename={finalSubjectFile}
+                  busy={uploadingSubject}
+                  onFile={uploadSubject}
+                  preview={subjectPreviewUrl ? <img src={subjectPreviewUrl} alt="Subject" className="max-h-44 w-full object-contain" /> : undefined}
+                />
+              </Field>
+              <div className="sm:col-span-2 rounded-xl border border-white/10 bg-black/25 p-3 text-sm text-zinc-500">
+                Direct upload still works exactly like the old path. The new path only takes over after you approve a generated character pose image.
+                {approvedSubjectFile ? (
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-zinc-300">
+                    <Check className="h-3.5 w-3.5" />
+                    Approved generated start image
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
+        </section>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <label className="text-[10px] text-white/35">Steps
-              <input type="number" value={steps} min={1} max={12} onChange={(e) => setSteps(Number(e.target.value) || 4)} className="mt-1 w-full bg-white/[0.02] border border-white/[0.06] rounded-lg px-2 py-2 text-[11px] font-mono" />
-            </label>
-            <label className="text-[10px] text-white/35">CFG
-              <input type="number" value={cfg} step={0.1} min={0.5} max={3} onChange={(e) => setCfg(Number(e.target.value) || 1)} className="mt-1 w-full bg-white/[0.02] border border-white/[0.06] rounded-lg px-2 py-2 text-[11px] font-mono" />
-            </label>
-            <label className="text-[10px] text-white/35">Pose Spatial
-              <input type="number" value={poseSpatial} step={0.1} min={0} max={2} onChange={(e) => setPoseSpatial(Number(e.target.value) || 1)} className="mt-1 w-full bg-white/[0.02] border border-white/[0.06] rounded-lg px-2 py-2 text-[11px] font-mono" />
-            </label>
-            <label className="text-[10px] text-white/35">Pose Temporal
-              <input type="number" value={poseTemporal} step={0.1} min={0} max={2} onChange={(e) => setPoseTemporal(Number(e.target.value) || 1)} className="mt-1 w-full bg-white/[0.02] border border-white/[0.06] rounded-lg px-2 py-2 text-[11px] font-mono" />
-            </label>
-          </div>
-
-          <div className="flex gap-2">
-            <input
-              type="number"
-              value={seed}
-              onChange={(e) => setSeed(parseInt(e.target.value))}
-              className="flex-1 bg-white/[0.02] border border-white/[0.06] rounded-xl py-2.5 px-3 text-[11px] font-mono text-white/35 focus:border-violet-500/20 outline-none"
-            />
-            <FeddaButton onClick={() => setSeed(-1)} variant={seed === -1 ? 'violet' : 'ghost'} className="p-2.5 rounded-xl">
-              <RefreshCw className="w-3.5 h-3.5" />
-            </FeddaButton>
-          </div>
-
-          <LoraSelector
-            label="SteadyDancer LoRA (optional override)"
-            value={loraName}
-            onChange={setLoraName}
-            strength={loraStrength}
-            onStrengthChange={setLoraStrength}
-            options={availableLoras}
-            accent="violet"
+        <section className={panel}>
+          <StageHeader
+            step="Stage 3"
+            title="Character Pose Image"
+            detail="Generate a new character image from the captured pose. Nothing is used automatically."
           />
-
-          <div className="pb-5">
-            <FeddaButton
-              disabled={!canGenerate}
-              onClick={handleGenerate}
-              variant="violet"
-              className="w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.35em] flex items-center justify-center gap-3 disabled:bg-white/[0.03] disabled:text-white/10"
-            >
-              {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
-              <span>{isGenerating ? 'Generating...' : 'Generate Motion Transfer'}</span>
-            </FeddaButton>
+          <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+            <div className="space-y-3">
+              <Field label="Character prompt">
+                <textarea
+                  value={posePrompt}
+                  onChange={(event) => setPosePrompt(event.target.value)}
+                  rows={4}
+                  className={classNames(inputBase, 'resize-y leading-relaxed')}
+                />
+              </Field>
+              <div className="grid gap-3 md:grid-cols-4">
+                <Field label="Control tool">
+                  <select value={controlMode} onChange={(event) => setControlMode(Number(event.target.value))} className={inputBase}>
+                    {CONTROL_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
+                  </select>
+                </Field>
+                <Field label="Style">
+                  <select value={controlStyle} onChange={(event) => setControlStyle(event.target.value)} className={inputBase}>
+                    {STYLES.map((style) => <option key={style}>{style}</option>)}
+                  </select>
+                </Field>
+                <Field label="Strength">
+                  <input type="number" min={0} max={2} step={0.05} value={controlStrength} onChange={(event) => setControlStrength(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="Seed">
+                  <input type="number" value={poseSeed} onChange={(event) => setPoseSeed(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="Width">
+                  <input type="number" min={512} step={64} value={poseWidth} onChange={(event) => setPoseWidth(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="Height">
+                  <input type="number" min={512} step={64} value={poseHeight} onChange={(event) => setPoseHeight(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="Steps">
+                  <input type="number" min={1} max={40} value={poseSteps} onChange={(event) => setPoseSteps(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="CFG">
+                  <input type="number" min={0} max={10} step={0.1} value={poseCfg} onChange={(event) => setPoseCfg(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="Denoise">
+                  <input type="number" min={0} max={1} step={0.05} value={poseDenoise} onChange={(event) => setPoseDenoise(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="Character LoRA" className="md:col-span-2">
+                  <select value={characterLora} onChange={(event) => setCharacterLora(event.target.value)} className={inputBase}>
+                    <option value="">Workflow default / none</option>
+                    {zImageLoras.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </Field>
+                <Field label="LoRA strength">
+                  <input type="number" min={0} max={2} step={0.05} value={characterLoraStrength} onChange={(event) => setCharacterLoraStrength(Number(event.target.value))} className={inputBase} />
+                </Field>
+              </div>
+              <NeutralButton onClick={generatePoseImage} disabled={!capturedFrameFile || !posePrompt.trim() || isGeneratingPose} className="w-full py-2.5">
+                {isGeneratingPose ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                Generate Character Pose Image
+              </NeutralButton>
+            </div>
+            <div className="space-y-3">
+              {poseImages.length === 0 ? (
+                <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-white/10 bg-black/30 px-6 text-center text-sm text-zinc-700">
+                  Generated pose candidates will appear here.
+                </div>
+              ) : (
+                poseImages.map((image, index) => (
+                  <div key={`${image.filename}-${index}`} className="space-y-2 rounded-xl border border-white/10 bg-black/30 p-2">
+                    <img src={outputUrl(image)} alt="Generated character pose" className="max-h-[420px] w-full rounded-lg object-contain" />
+                    <NeutralButton onClick={() => approvePoseImage(image)} disabled={isImportingPose} className="w-full">
+                      {isImportingPose ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      Use as Steady Dancer start image
+                    </NeutralButton>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
+        </section>
+
+        <section className={panel}>
+          <StageHeader
+            step="Stage 4"
+            title="Motion Transfer"
+            detail="Final WAN 2.1 Steady Dancer run. Uses approved image when available, otherwise the direct subject upload."
+          />
+          <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+            <div className="space-y-3">
+              <Field label="Steady Dancer prompt">
+                <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={4} className={classNames(inputBase, 'resize-y leading-relaxed')} />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-4">
+                <Field label="Width">
+                  <input type="number" min={256} step={16} value={width} onChange={(event) => setWidth(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="Height">
+                  <input type="number" min={256} step={16} value={height} onChange={(event) => setHeight(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="Length">
+                  <input type="number" min={1} step={0.5} value={videoLength} onChange={(event) => setVideoLength(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="FPS">
+                  <input type="number" min={8} max={30} value={fps} onChange={(event) => setFps(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="Steps">
+                  <input type="number" min={1} max={80} value={steps} onChange={(event) => setSteps(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="CFG">
+                  <input type="number" min={0} max={20} step={0.1} value={cfg} onChange={(event) => setCfg(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="Pose spatial">
+                  <input type="number" min={0} max={2} step={0.05} value={poseSpatial} onChange={(event) => setPoseSpatial(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="Pose temporal">
+                  <input type="number" min={0} max={2} step={0.05} value={poseTemporal} onChange={(event) => setPoseTemporal(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="Seed">
+                  <input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value))} className={inputBase} />
+                </Field>
+                <Field label="WAN LoRA" className="sm:col-span-2">
+                  <select value={loraName} onChange={(event) => setLoraName(event.target.value)} className={inputBase}>
+                    <option value="">Workflow default / none</option>
+                    {wanLoras.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </Field>
+                <Field label="LoRA strength">
+                  <input type="number" min={0} max={2} step={0.05} value={loraStrength} onChange={(event) => setLoraStrength(Number(event.target.value))} className={inputBase} />
+                </Field>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                <p className={smallLabel}>Subject image</p>
+                {subjectPreviewUrl ? <img src={subjectPreviewUrl} alt="Final subject" className="mt-2 aspect-[3/4] w-full rounded-lg object-contain" /> : <div className="mt-2 flex aspect-[3/4] items-center justify-center text-sm text-zinc-700">Missing</div>}
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                <p className={smallLabel}>Motion reference</p>
+                {trimmedVideoUrl || sourceVideoUrl ? <video src={trimmedVideoUrl || sourceVideoUrl || undefined} className="mt-2 aspect-video w-full rounded-lg object-contain" controls playsInline /> : <div className="mt-2 flex aspect-video items-center justify-center text-sm text-zinc-700">Missing</div>}
+                <p className="mt-2 truncate text-[11px] text-zinc-600">{finalMotionFile || 'No video selected'}</p>
+              </div>
+            </div>
+          </div>
+          <NeutralButton onClick={runSteadyDancer} disabled={!canRun} className="mt-4 w-full py-3 text-sm">
+            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            Run Steady Dancer
+          </NeutralButton>
+        </section>
       </div>
     </WorkflowShell>
   );
-};
+}
+
+export default Wan21SteadyDancerPage;

@@ -59,6 +59,84 @@
                                              }
                                }
                 },
+    "z-image-controlnet-pose":  {
+                                    "name":  "Z-Image ControlNet Pose",
+                                    "filename":  "z-image/z-image-controlnet-api.json",
+                                    "description":  "Generate a character start frame from a captured pose frame using Z-Image ControlNet.",
+                                    "inputs":  {
+                                                   "image":  {
+                                                                 "node_id":  "99",
+                                                                 "input_key":  "image",
+                                                                 "type":  "string",
+                                                                 "label":  "Pose Frame"
+                                                             },
+                                                   "prompt":  {
+                                                                  "node_id":  "113",
+                                                                  "input_key":  "string",
+                                                                  "type":  "string",
+                                                                  "label":  "Prompt"
+                                                              },
+                                                   "style":  {
+                                                                 "node_id":  "114",
+                                                                 "input_key":  "styles",
+                                                                 "type":  "string",
+                                                                 "label":  "Style"
+                                                             },
+                                                   "control_mode":  {
+                                                                        "node_id":  "117",
+                                                                        "input_key":  "select",
+                                                                        "type":  "number",
+                                                                        "label":  "Control Mode"
+                                                                    },
+                                                   "control_strength":  {
+                                                                            "node_id":  "101",
+                                                                            "input_key":  "strength",
+                                                                            "type":  "number",
+                                                                            "label":  "Control Strength"
+                                                                        },
+                                                   "width":  {
+                                                                 "node_id":  "86",
+                                                                 "input_key":  "width",
+                                                                 "type":  "number",
+                                                                 "label":  "Width"
+                                                             },
+                                                   "height":  {
+                                                                  "node_id":  "86",
+                                                                  "input_key":  "height",
+                                                                  "type":  "number",
+                                                                  "label":  "Height"
+                                                              },
+                                                   "seed":  {
+                                                                "node_id":  "83",
+                                                                "input_key":  "seed",
+                                                                "type":  "number",
+                                                                "label":  "Seed"
+                                                            },
+                                                   "steps":  {
+                                                                 "node_id":  "83",
+                                                                 "input_key":  "steps",
+                                                                 "type":  "number",
+                                                                 "label":  "Steps"
+                                                             },
+                                                   "cfg":  {
+                                                               "node_id":  "83",
+                                                               "input_key":  "cfg",
+                                                               "type":  "number",
+                                                               "label":  "CFG Scale"
+                                                           },
+                                                   "denoise":  {
+                                                                  "node_id":  "83",
+                                                                  "input_key":  "denoise",
+                                                                  "type":  "number",
+                                                                  "label":  "Denoise"
+                                                              },
+                                                   "loras":  {
+                                                                 "node_id":  "129",
+                                                                 "type":  "loras",
+                                                                 "label":  "Character LoRAs"
+                                                             }
+                                               }
+                                },
     "z-image-dual-base":  {
                               "name":  "Z-Image Dual LoRA (Base + Detect)",
                               "filename":  "z-image/z-image-dual-lora-base.json",

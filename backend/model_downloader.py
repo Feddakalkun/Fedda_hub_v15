@@ -30,6 +30,21 @@ class ModelDownloader:
                 "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors",
                 "min_bytes": 5 * 1024 * 1024,
             },
+            "Z-Image-Turbo-Fun-Controlnet-Union.safetensors": {
+                "relative_dir": Path("model_patches"),
+                "url": "https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet/resolve/main/Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
+                "min_bytes": 10 * 1024 * 1024,
+            },
+            "lotus-depth-g-v2-0-disparity.safetensors": {
+                "relative_dir": Path("unet"),
+                "url": "https://huggingface.co/LotusDEPTH/Lotus-Depth-g-v2-0-disparity/resolve/main/diffusion_pytorch_model.safetensors",
+                "min_bytes": 10 * 1024 * 1024,
+            },
+            "vae-ft-mse-840000-ema-pruned.safetensors": {
+                "relative_dir": Path("vae"),
+                "url": "https://huggingface.co/stabilityai/sd-vae-ft-mse-original/resolve/main/vae-ft-mse-840000-ema-pruned.safetensors",
+                "min_bytes": 5 * 1024 * 1024,
+            },
         }
 
     def get_progress(self, filename: str) -> dict:

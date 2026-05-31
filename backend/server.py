@@ -11,10 +11,13 @@ import base64
 import subprocess
 import sys
 import sqlite3
+import shutil
+import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import re
 import time
+from urllib.parse import urlparse
 
 # Ensure backend directory is in sys.path for module imports
 backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1678,11 +1681,32 @@ class GenerateRequest(BaseModel):
     params: Dict[str, Any]
 
 
+class DownloadVideoRequest(BaseModel):
+    url: str
+
+
+class TrimVideoRequest(BaseModel):
+    filename: str
+    start_sec: float
+    end_sec: float
+
+
+class CaptureFrameRequest(BaseModel):
+    filename: str
+    time_sec: float
+
+
+class ImportComfyImageRequest(BaseModel):
+    filename: str
+    subfolder: str = ""
+    type: str = "output"
+
+
 def _zimage_required_models(workflow_id: str, params: Dict[str, Any]) -> List[str]:
     """
     Resolve which Z-Image core models must exist before prompt validation.
     """
-    zimage_ids = {"z-image", "z-image-dual-base", "z-image-dual-detail"}
+    zimage_ids = {"z-image", "z-image-dual-base", "z-image-dual-detail", "z-image-controlnet-pose"}
     if workflow_id not in zimage_ids:
         return []
 
@@ -1696,7 +1720,168 @@ def _zimage_required_models(workflow_id: str, params: Dict[str, Any]) -> List[st
         str((params or {}).get("clip_name") or defaults["clip_name"]).strip(),
         str((params or {}).get("vae_name") or defaults["vae_name"]).strip(),
     ]
+    if workflow_id == "z-image-controlnet-pose":
+        names.extend([
+            "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
+            "lotus-depth-g-v2-0-disparity.safetensors",
+            "vae-ft-mse-840000-ema-pruned.safetensors",
+        ])
     return [n for n in names if n]
+
+
+def _comfy_input_dir() -> Path:
+    path = COMFY_DIR / "input"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _safe_unique_name(prefix: str, suffix: str) -> str:
+    clean_prefix = re.sub(r"[^a-zA-Z0-9_-]+", "_", prefix).strip("_") or "media"
+    clean_suffix = "." + suffix.strip(".").lower()
+    return f"fedda_{clean_prefix}_{uuid.uuid4().hex[:12]}{clean_suffix}"
+
+
+def _resolve_under(base: Path, relative_name: str) -> Path:
+    if not relative_name or "\x00" in relative_name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    candidate = (base / relative_name.replace("\\", "/")).resolve()
+    base_resolved = base.resolve()
+    if candidate != base_resolved and base_resolved not in candidate.parents:
+        raise HTTPException(status_code=400, detail="Invalid filename path")
+    return candidate
+
+
+def _resolve_input_file(filename: str) -> Path:
+    path = _resolve_under(_comfy_input_dir(), filename)
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"Input media not found: {filename}")
+    return path
+
+
+def _ffmpeg_exe() -> str:
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
+def _run_ffmpeg(args: List[str]) -> None:
+    cmd = [_ffmpeg_exe(), *args]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "ffmpeg failed").strip().splitlines()
+        raise HTTPException(status_code=500, detail=detail[-1] if detail else "ffmpeg failed")
+
+
+@app.post("/api/media/download-video")
+async def download_video(req: DownloadVideoRequest):
+    """Download one public social/video URL into ComfyUI input as an mp4."""
+    parsed = urlparse((req.url or "").strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="Enter a valid http(s) video URL")
+
+    try:
+        import yt_dlp
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"yt-dlp is not installed: {exc}")
+
+    input_dir = _comfy_input_dir()
+    stem = _safe_unique_name("social", "mp4")[:-4]
+    target = input_dir / f"{stem}.mp4"
+    outtmpl = str(input_dir / f"{stem}.%(ext)s")
+
+    opts = {
+        "format": "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/best[height<=720]/best",
+        "outtmpl": outtmpl,
+        "noplaylist": True,
+        "merge_output_format": "mp4",
+        "quiet": True,
+        "no_warnings": True,
+        "overwrites": True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(req.url.strip(), download=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Video download failed: {exc}")
+
+    candidates = sorted(input_dir.glob(f"{stem}.*"), key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+    source = target if target.exists() else (candidates[0] if candidates else None)
+    if not source or not source.exists():
+        raise HTTPException(status_code=500, detail="Download finished but no media file was found")
+    if source.suffix.lower() != ".mp4":
+        _run_ffmpeg(["-y", "-i", str(source), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(target)])
+        try:
+            source.unlink()
+        except Exception:
+            pass
+    elif source != target:
+        source.replace(target)
+
+    return {
+        "success": True,
+        "filename": target.name,
+        "title": (info or {}).get("title"),
+        "duration": (info or {}).get("duration"),
+    }
+
+
+@app.post("/api/media/trim-video")
+async def trim_video(req: TrimVideoRequest):
+    """Trim a ComfyUI input video into a new H.264 mp4 without audio."""
+    start = max(0.0, float(req.start_sec))
+    end = max(0.0, float(req.end_sec))
+    if end <= start + 0.1:
+        raise HTTPException(status_code=400, detail="Trim end must be after start")
+    if end - start > 180:
+        raise HTTPException(status_code=400, detail="Clip is too long for Steady Dancer staging; keep it under 180 seconds")
+
+    source = _resolve_input_file(req.filename)
+    target = _comfy_input_dir() / _safe_unique_name("trim", "mp4")
+    _run_ffmpeg([
+        "-y",
+        "-ss", f"{start:.3f}",
+        "-i", str(source),
+        "-t", f"{end - start:.3f}",
+        "-an",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "20",
+        "-pix_fmt", "yuv420p",
+        str(target),
+    ])
+    return {"success": True, "filename": target.name, "duration": end - start}
+
+
+@app.post("/api/media/capture-frame")
+async def capture_frame(req: CaptureFrameRequest):
+    """Capture one PNG frame from a ComfyUI input video into ComfyUI input."""
+    time_sec = max(0.0, float(req.time_sec))
+    source = _resolve_input_file(req.filename)
+    target = _comfy_input_dir() / _safe_unique_name("pose_frame", "png")
+    _run_ffmpeg(["-y", "-ss", f"{time_sec:.3f}", "-i", str(source), "-frames:v", "1", "-q:v", "2", str(target)])
+    return {"success": True, "filename": target.name}
+
+
+@app.post("/api/media/import-image")
+async def import_comfy_image(req: ImportComfyImageRequest):
+    """Copy a generated Comfy image from output/temp/input into input so another workflow can LoadImage it."""
+    media_type = (req.type or "output").strip().lower()
+    if media_type == "input":
+        source_base = _comfy_input_dir()
+    elif media_type == "temp":
+        source_base = COMFY_DIR / "temp"
+    else:
+        source_base = OUTPUT_DIR
+    relative = f"{(req.subfolder or '').strip().strip('/')}/{req.filename}".lstrip("/")
+    source = _resolve_under(source_base, relative)
+    if not source.exists() or not source.is_file():
+        raise HTTPException(status_code=404, detail=f"Generated image not found: {req.filename}")
+    suffix = source.suffix.lower().lstrip(".") or "png"
+    target = _comfy_input_dir() / _safe_unique_name("approved_pose", suffix)
+    shutil.copy2(source, target)
+    return {"success": True, "filename": target.name}
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
