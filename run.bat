@@ -217,7 +217,7 @@ if exist "%BASE_DIR%\python_embeded\python.exe" (
     set "MODE=portable"
     set "PYTHON=%BASE_DIR%\python_embeded\python.exe"
     set "PATH=%BASE_DIR%\python_embeded;%BASE_DIR%\python_embeded\Scripts;%BASE_DIR%\git\cmd;%BASE_DIR%\node_embeded;%PATH%"
-    set "COMFY_EXTRA_FLAGS=--windows-standalone-build --force-fp16"
+    set "COMFY_EXTRA_FLAGS=--windows-standalone-build --force-upcast-attention"
 ) else if exist "%BASE_DIR%\venv\Scripts\python.exe" (
     set "MODE=lite"
     set "PYTHON=%BASE_DIR%\venv\Scripts\python.exe"
