@@ -272,7 +272,6 @@ export function Wan21SteadyDancerPage() {
   const dragging = useRef<'start' | 'end' | null>(null);
   const prevVideoCountRef = useRef(0);
   const sessionRef = useRef<string[]>([]);
-  const initialRecoverRef = useRef(false);
 
   const [sourceUrl, setSourceUrl] = useState('');
   const [subjectImageFile, setSubjectImageFile] = usePersistentState<string | null>('wan21sd_subject_image', null);
@@ -338,6 +337,12 @@ export function Wan21SteadyDancerPage() {
   const finalSubjectFile = approvedSubjectFile || subjectImageFile;
   const finalMotionFile = trimmedMotionFile || motionVideoFile;
   const clipLength = Math.max(0, endTime - startTime);
+
+  const clearPoseStage = useCallback(() => {
+    setCapturedFrameFile(null);
+    setApprovedSubjectFile(null);
+    setPoseImages([]);
+  }, [setApprovedSubjectFile, setCapturedFrameFile]);
 
   const wanLoras = useMemo(() => availableLoras.filter((name) => {
     const n = name.replace(/\\/g, '/').toLowerCase();
@@ -459,6 +464,7 @@ export function Wan21SteadyDancerPage() {
       const filename = await uploadToComfy(file);
       setSubjectImageFile(filename);
       setApprovedSubjectFile(null);
+      setPoseImages([]);
       toast('Subject image uploaded', 'success');
     } catch (err: any) {
       toast(err.message || 'Subject upload failed', 'error');
@@ -473,7 +479,7 @@ export function Wan21SteadyDancerPage() {
       const filename = await uploadToComfy(file);
       setMotionVideoFile(filename);
       setTrimmedMotionFile(null);
-      setCapturedFrameFile(null);
+      clearPoseStage();
       toast('Motion video uploaded', 'success');
     } catch (err: any) {
       toast(err.message || 'Motion upload failed', 'error');
@@ -495,7 +501,7 @@ export function Wan21SteadyDancerPage() {
       if (!res.ok || !data.success) throw new Error(data.detail || 'Download failed');
       setMotionVideoFile(data.filename);
       setTrimmedMotionFile(null);
-      setCapturedFrameFile(null);
+      clearPoseStage();
       if (data.duration) {
         setVideoDuration(Number(data.duration));
         setStartTime(0);
@@ -553,18 +559,39 @@ export function Wan21SteadyDancerPage() {
     if (!motionVideoFile || endTime <= startTime) return;
     setIsTrimming(true);
     try {
-      const res = await fetch(`${BACKEND_API.BASE_URL}/api/media/trim-video`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: motionVideoFile, start_sec: startTime, end_sec: endTime }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.detail || 'Trim failed');
+      const data = await trimMotionRequest(motionVideoFile, startTime, endTime);
       setTrimmedMotionFile(data.filename);
       setVideoLength(Math.max(1, Math.round(Number(data.duration || clipLength) * 10) / 10));
       toast('Trimmed clip ready', 'success');
     } catch (err: any) {
       toast(err.message || 'Trim failed', 'error');
+    } finally {
+      setIsTrimming(false);
+    }
+  };
+
+  const trimMotionRequest = async (filename: string, startSec: number, endSec: number) => {
+    const res = await fetch(`${BACKEND_API.BASE_URL}/api/media/trim-video`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, start_sec: startSec, end_sec: endSec }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.detail || 'Trim failed');
+    return data;
+  };
+
+  const ensureTrimmedMotionForRun = async () => {
+    if (trimmedMotionFile) return trimmedMotionFile;
+    if (!motionVideoFile) return null;
+    if (endTime <= startTime || clipLength <= 0) return motionVideoFile;
+
+    setIsTrimming(true);
+    try {
+      const data = await trimMotionRequest(motionVideoFile, startTime, endTime);
+      setTrimmedMotionFile(data.filename);
+      setVideoLength(Math.max(1, Math.round(Number(data.duration || clipLength) * 10) / 10));
+      return String(data.filename);
     } finally {
       setIsTrimming(false);
     }
@@ -582,6 +609,8 @@ export function Wan21SteadyDancerPage() {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.detail || 'Capture failed');
       setCapturedFrameFile(data.filename);
+      setApprovedSubjectFile(null);
+      setPoseImages([]);
       toast('Pose frame captured', 'success');
     } catch (err: any) {
       toast(err.message || 'Capture failed', 'error');
@@ -644,12 +673,6 @@ export function Wan21SteadyDancerPage() {
     }
   };
 
-  useEffect(() => {
-    if (initialRecoverRef.current || poseImages.length > 0 || isGeneratingPose) return;
-    initialRecoverRef.current = true;
-    recoverLatestPoseOutput(true);
-  }, [isGeneratingPose, poseImages.length]);
-
   const generatePoseImage = async () => {
     if (!capturedFrameFile || isGeneratingPose) return;
     setIsGeneratingPose(true);
@@ -685,8 +708,7 @@ export function Wan21SteadyDancerPage() {
       setPoseImages(imported);
       toast('Character pose image ready for review', 'success');
     } catch (err: any) {
-      const recovered = await recoverLatestPoseOutput(true);
-      toast(recovered ? 'Recovered latest Z-Image output for review' : (err.message || 'Z-Image generation failed'), recovered ? 'success' : 'error');
+      toast(err.message || 'Z-Image generation failed', 'error');
     } finally {
       setIsGeneratingPose(false);
     }
@@ -729,6 +751,8 @@ export function Wan21SteadyDancerPage() {
       .catch(() => {});
 
     try {
+      const motionForRun = await ensureTrimmedMotionForRun();
+      if (!motionForRun) throw new Error('Missing motion reference');
       const res = await fetch(`${BACKEND_API.BASE_URL}${BACKEND_API.ENDPOINTS.GENERATE}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -736,7 +760,7 @@ export function Wan21SteadyDancerPage() {
           workflow_id: 'wan21-steady-dancer',
           params: {
             image: finalSubjectFile,
-            reference_video: finalMotionFile,
+            reference_video: motionForRun,
             prompt: prompt.trim(),
             width,
             height,
